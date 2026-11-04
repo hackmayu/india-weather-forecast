@@ -36,6 +36,7 @@ interface Props {
   onOutside: (lat: number, lon: number) => void;
   onHover: (h: Hover | null) => void;
   onBasemapFailed: () => void;
+  view?: "india" | "world";   // world = zoom out to the whole globe (the forecast overlay still covers India only)
 }
 
 export default function MapView(props: Props) {
@@ -115,7 +116,7 @@ export default function MapView(props: Props) {
       // ?offline simulates an unreachable hosted basemap (used to test the fallback path).
       style: location.search.includes("offline") ? "https://offline.invalid/style.json" : styleUrl(latest.current.basemap, latest.current.dark),
       bounds: [[d.lon_min - 0.5, d.lat_min - 0.5], [d.lon_max + 0.5, d.lat_max + 0.5]],
-      maxBounds: [[d.lon_min - 25, d.lat_min - 20], [d.lon_max + 25, d.lat_max + 20]],
+      minZoom: 0.6, renderWorldCopies: false,
       attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
     });
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
@@ -154,6 +155,16 @@ export default function MapView(props: Props) {
   }, []);
 
   useEffect(paint, [data, scale, smooth]);
+
+  const viewInit = useRef(true);
+  useEffect(() => {
+    if (viewInit.current) { viewInit.current = false; return; }
+    const m = map.current; if (!m) return;
+    const d = latest.current.meta.domain;
+    const calm = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (props.view === "world") m.easeTo({ center: [30, 18], zoom: Math.max(0.6, Math.log2(m.getContainer().clientWidth / 512) + 0.15), duration: calm ? 0 : 900 });
+    else m.fitBounds([[d.lon_min - 0.5, d.lat_min - 0.5], [d.lon_max + 0.5, d.lat_max + 0.5]], { duration: calm ? 0 : 900 });
+  }, [props.view]);
 
   useEffect(() => {
     if (firstStyle.current) { firstStyle.current = false; return; }

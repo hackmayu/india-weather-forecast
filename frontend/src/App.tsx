@@ -72,6 +72,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(lsGet("theme", "auto") as Theme);
   const [sysDark, setSysDark] = useState(() => typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches);
 
+  const [mapView, setMapView] = useState<"india" | "world">("india");
   const [placeLabel, setPlaceLabel] = useState("");   // name chosen in the search box; cleared when a place is picked on the map or by coordinates
   const [mapData, setMapData] = useState<MapResp | null>(null);
   // Secondary panels (all-cities overview, previous-run comparison) download many data files; wait until the map is drawn and the page has been quiet for a moment.
@@ -520,7 +521,7 @@ export default function App() {
           </p>
           <div className="mapwrap">
             <Suspense fallback={<div className="map map-skeleton" aria-hidden="true" />}>
-            <MapView meta={meta} data={mapData} variable={variable} scale={scale} smooth={smooth} basemap={basemap} dark={dark} marker={marker}
+            <MapView view={mapView} meta={meta} data={mapData} variable={variable} scale={scale} smooth={smooth} basemap={basemap} dark={dark} marker={marker}
               onPick={choosePoint} onOutside={outside} onHover={setHover} onBasemapFailed={onBasemapFailed} />
             </Suspense>
             {mapLoading && <div className="overlay" role="status">Loading map…</div>}
@@ -530,6 +531,10 @@ export default function App() {
               note={smooth ? "Display smoothed between 0.25° cells; the data are not finer than that." : "Raw 0.25° grid cells."} />
           </div>
           <div className="options">
+            <span className="seg small" role="group" aria-label="Map view" title="World view shows the whole globe; the forecast data still covers India only (dashed box)">
+              <label className={mapView === "india" ? "on" : ""}><input type="radio" name="mapview" checked={mapView === "india"} onChange={() => setMapView("india")} /> 🇮🇳 India</label>
+              <label className={mapView === "world" ? "on" : ""}><input type="radio" name="mapview" checked={mapView === "world"} onChange={() => setMapView("world")} /> 🌍 World</label>
+            </span>
             <label><input type="checkbox" checked={smooth} onChange={(e) => setSmooth(e.target.checked)} /> Smooth display</label>
             <label>Basemap{" "}
               <select value={basemap} onChange={(e) => { setBasemap(e.target.value as Basemap); setBasemapFailed(false); }}>
