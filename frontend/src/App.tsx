@@ -553,6 +553,20 @@ export default function App() {
             <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
             <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
           </> : <div className="panel-skeleton" aria-hidden="true" />}
+          <section className="panel tryit">
+            <h2>Things to try</h2>
+            <div className="trygrid">
+              <button type="button" onClick={() => nextHours(24)}>🌧 Rain in the next 24 hours</button>
+              <button type="button" onClick={() => { setVariable("temp"); setIndex(Math.max(minIndex, nowInfo.index)); }}>🌡 Temperature now</button>
+              <button type="button" onClick={() => { setVariable("wind"); setIndex(Math.max(minIndex, nowInfo.index)); }}>💨 Wind now</button>
+              <button type="button" onClick={() => { setVariable("cloud"); setIndex(Math.max(minIndex, nowInfo.index)); }}>☁ Cloud cover now</button>
+              <button type="button" onClick={() => setMapView("world")}>🌍 See the world map</button>
+              <button type="button" onClick={useMyLocation}>📍 Forecast for my location</button>
+              <button type="button" onClick={copyLink}>🔗 {copied ? "Link copied" : "Copy a link to this view"}</button>
+              <button type="button" onClick={() => setPlaying(true)}>▶ Play the next days</button>
+            </div>
+            <p className="muted">Tip: tap any place on the map, or search a town above, then open the sections under its charts for rain chances and the temperature, cloud and wind curves.</p>
+          </section>
         </div>
 
         <aside className="right">
@@ -581,6 +595,17 @@ export default function App() {
             <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold}
               nowMs={nowMs} onBack={backToMap} onPickPreset={choosePoint} label={placeLabel} />
           </div>
+          <section className="panel aboutdata">
+            <h2>About this forecast</h2>
+            <dl className="facts">
+              <div><dt>Model</dt><dd>ECMWF IFS (high-resolution, 0.25° ≈ 28 km)</dd></div>
+              <div><dt>Run issued</dt><dd>{formatTime(meta.issue_time_utc, zone)}</dd></div>
+              <div><dt>Processed</dt><dd>{formatTime(meta.processed_at_utc, zone)}</dd></div>
+              <div><dt>Steps</dt><dd>every 3 h, up to +{lastStep} h ({Math.round(lastStep / 24)} days)</dd></div>
+              <div><dt>Area</dt><dd>India, {meta.domain.lat_min}–{meta.domain.lat_max}°N, {meta.domain.lon_min}–{meta.domain.lon_max}°E</dd></div>
+            </dl>
+            <p className="muted">Model output for grid cells, not observations or warnings. For safety decisions use your national weather service.</p>
+          </section>
         </aside>
       </main>
 

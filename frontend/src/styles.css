@@ -368,3 +368,9 @@ main { gap: 28px; }
   main { gap: 20px; }
   .panel { padding: 16px; }
 }
+.trygrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 12px 0; }
+.trygrid button { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); cursor: pointer; font: inherit; }
+.trygrid button:hover { border-color: var(--accent); }
+.facts { margin: 10px 0; display: grid; gap: 8px; }
+.facts > div { display: grid; grid-template-columns: 8rem 1fr; gap: 10px; }
+.facts dt { color: var(--muted); } .facts dd { margin: 0; }
