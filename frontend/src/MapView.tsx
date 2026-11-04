@@ -15,7 +15,8 @@ export type Basemap = keyof typeof BASEMAPS;
 
 type Quad = [[number, number], [number, number], [number, number], [number, number]];
 const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
-const FADE_MS = 350;
+// Respect the user's reduced-motion preference: no cross-fade, just an instant swap.
+const FADE_MS = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350;
 
 export interface Hover { lat: number; lon: number; value: number }
 

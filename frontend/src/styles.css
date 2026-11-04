@@ -129,3 +129,6 @@ h1 { font-size: 1.5rem; letter-spacing: -.01em; }
 .classbar li:last-child .swatch { border-radius: 0 6px 6px 0; }
 .classbar .tick { font-size: .72rem; color: var(--muted); text-align: left; padding-left: 1px; }
 .mapwrap .legend { width: min(78%, 420px); }
+.skip { position: absolute; left: -9999px; top: 0; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: 0 0 6px 0; z-index: 10; }
+.skip:focus { left: 0; }
+.locform:focus { outline: none; }

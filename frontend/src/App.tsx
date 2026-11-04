@@ -141,6 +141,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <a className="skip" href="#locations">Skip map, go to location chooser</a>
       <header>
         <div>
           <h1>India Weather Forecast Explorer</h1>
@@ -231,7 +232,7 @@ export default function App() {
         </div>
 
         <aside className="right">
-          <form className="locform" onSubmit={(e) => { e.preventDefault(); const la = Number(latIn), lo = Number(lonIn); if (latIn.trim() === "" || lonIn.trim() === "" || !isFinite(la) || !isFinite(lo)) { setNotice("Enter numeric latitude and longitude."); return; } choosePoint(la, lo); }}>
+          <form className="locform" id="locations" tabIndex={-1} onSubmit={(e) => { e.preventDefault(); const la = Number(latIn), lo = Number(lonIn); if (latIn.trim() === "" || lonIn.trim() === "" || !isFinite(la) || !isFinite(lo)) { setNotice("Enter numeric latitude and longitude."); return; } choosePoint(la, lo); }}>
             <fieldset>
               <legend>Choose a location</legend>
               <div className="presets">
