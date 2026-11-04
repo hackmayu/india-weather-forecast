@@ -37,7 +37,16 @@ export default function PlaceSearch({ onPick }: { onPick: (p: Place) => void }) 
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
-  const results = places ? searchPlaces(places, q) : [];
+  const typed = q.trim().length >= 2;
+  const results = places ? (typed ? searchPlaces(places, q) : places.slice(0, 8)) : [];   // places are sorted by population: the first ones are the biggest cities
+  const states = places ? [...new Set(places.map((p) => p.state).filter(Boolean))].sort() : [];
+  const [state, setState] = useState("");
+  const inState = places && state ? places.filter((p) => p.state === state).slice(0, 60) : [];
+
+  useEffect(() => {   // fetch the place list shortly after the page settles so the state menu is filled when first opened
+    const id = window.setTimeout(() => void loadPlaces().then(setPlaces), 2500);
+    return () => window.clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
@@ -61,10 +70,11 @@ export default function PlaceSearch({ onPick }: { onPick: (p: Place) => void }) 
           onFocus={() => { setOpen(true); void loadPlaces().then(setPlaces); }}
           onChange={(e) => { setQ(e.target.value); setOpen(true); setActive(0); }} onKeyDown={onKey} />
       </label>
-      {open && q.trim().length >= 2 && (
+      {open && (
         <ul id="place-listbox" role="listbox" className="placelist">
           {!places && <li className="muted">Loading places…</li>}
-          {places && results.length === 0 && <li className="muted">No match. Try the spelling, or pick on the map.</li>}
+          {places && !typed && <li className="muted hdr">Biggest cities (type to find any of {places.length.toLocaleString()} towns)</li>}
+          {places && typed && results.length === 0 && <li className="muted">No match. Try the spelling, or pick on the map.</li>}
           {results.map((p, i) => (
             <li key={`${p.name}-${p.lat}-${p.lon}`} role="option" aria-selected={i === active}
               className={i === active ? "on" : ""} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(p); }}>
@@ -73,6 +83,22 @@ export default function PlaceSearch({ onPick }: { onPick: (p: Place) => void }) 
           ))}
         </ul>
       )}
+      <div className="bystate">
+        <label>Or browse by state
+          <select value={state} onFocus={() => void loadPlaces().then(setPlaces)} onChange={(e) => setState(e.target.value)}>
+            <option value="">Choose a state…</option>
+            {states.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        {state && (
+          <label>Town in {state}
+            <select value="" onChange={(e) => { const pl = inState[Number(e.target.value)]; if (pl) pick(pl); }}>
+              <option value="">Choose a town…</option>
+              {inState.map((p, i) => <option key={`${p.name}-${p.lat}`} value={i}>{p.name}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
     </div>
   );
 }

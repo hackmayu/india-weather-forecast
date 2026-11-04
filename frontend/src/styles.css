@@ -327,3 +327,6 @@ button, .chip, summary { touch-action: manipulation; }
 }
 .locform legend { padding: 0 6px; background: var(--card); }
 .placesearch label { display: block; margin-top: 6px; }
+.placelist li.hdr { font-size: .78rem; padding: 4px 10px; }
+.bystate { display: grid; gap: 6px; margin-top: 8px; }
+.bystate select { width: 100%; }
