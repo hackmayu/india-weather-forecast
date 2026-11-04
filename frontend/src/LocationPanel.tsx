@@ -167,7 +167,7 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
       </details>
 
       {prob && probMeta && (
-        <details className="probtable" open>
+        <details className="probtable">
           <summary>Chance of rain at this cell <span className="tag">ECMWF ensemble probability</span></summary>
           <div className="table-wrap">
             <table>
@@ -209,7 +209,7 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
       )}
 
       {hasInstant && (
-        <details className="more-vars" open>
+        <details className="more-vars">
           <summary>Temperature, cloud and wind at this cell</summary>
           <Chart title="2 m temperature (°C, value at each time)" unit="°C" series={s} values={s.map((p) => p.temp_c ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} color="#d9480f" autoRange />
           <Chart title="Total cloud cover (%, value at each time)" unit="%" series={s} values={s.map((p) => p.cloud_pct ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} color="#5b6472" fixedMax={100} />
