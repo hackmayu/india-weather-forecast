@@ -6,6 +6,7 @@ from typing import Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi.middleware.gzip import GZipMiddleware
 
 from contextlib import asynccontextmanager
 
@@ -31,6 +32,9 @@ app = FastAPI(
                  "Contains modified ECMWF data, CC-BY-4.0. Deterministic forecast: no probabilities, "
                  "no observations, not an official warning."),
 )
+
+# JSON grids compress ~5-10x; without this a wind field is ~840 KB over the wire.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 RunId = Path(pattern=r"^(\d{10}|latest)$", description="YYYYMMDDHH run id, or 'latest'")
 

@@ -25,7 +25,7 @@ at the applicant's direction; decisions are recorded below with who made them.
 - [x] M1: real tp series fetched (49 steps, 23.6 MB) and interpreted
 - [x] M2: processing + minimal backend (26 tests pass; wet-cell values match source GRIB)
 - [x] M3: map, timeline, location view (checked in browser at desktop and 375px mobile: map, click select, outside-domain message, play/pause; keyboard & screen-reader pass still TODO)
-- [ ] M4: usability + scientific explanations
+- [x] M4: usability + scientific explanations (keyboard checks done; screen reader NOT tested)
 - [ ] M5: verify, deploy, document (deploy config + in-app refresh written; refresh path verified on cold disk: 52 s, checksums match; live Render deploy pending applicant signup)
 
 ## Deployment decision (2026-11-04)
@@ -44,3 +44,8 @@ smooth radar-style map, richer basemap/labels, animation polish, more ECMWF vari
   the cross-fade only blends the display of two real time steps.
 - This cannot make the underlying forecast more accurate; it changes how it is shown and what is shown.
 - Cost: run payload grew from ~24 MB to ~134 MB per refresh (about 3 min cold fetch).
+
+## 2026-11-04 evening (resumed 19:20 IST, 67.5 h before deadline)
+- Live check of the newer-run path with real data (00 UTC served, 06 UTC added): banner appeared, data not swapped, loaded on request.
+- README written; gzip added to the API (wind field 841 KB -> 71 KB over the wire).
+- Waiting on applicant: GitHub repository URL and Render account (applicant's own steps).
