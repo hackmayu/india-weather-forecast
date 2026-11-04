@@ -42,6 +42,11 @@ async function get<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+export interface Status {
+  refreshing: boolean; last_attempt_utc: string | null; last_result: string | null;
+  last_error: string | null; auto_refresh: boolean; latest_run: string | null;
+}
+export const fetchStatus = () => get<Status>("/api/status");
 export const fetchRun = () => get<RunMeta>("/api/runs/latest");
 export const fetchMap = (runId: string, step: number, kind: Kind) =>
   get<MapResp>(`/api/runs/${runId}/map?step=${step}&kind=${kind}`);

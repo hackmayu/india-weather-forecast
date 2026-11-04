@@ -15,6 +15,7 @@ import argparse
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -136,7 +137,10 @@ def fetch_step(run: Run, step: int) -> Path:
 
 
 def fetch_run(run: Run) -> list[Path]:
-    paths = [fetch_step(run, s) for s in run.steps]
+    # 4 parallel requests: a sequential run took ~190 s on 2026-11-04 (2 HTTP calls per step).
+    # Kept small to stay polite to the public server; map() preserves step order and re-raises errors.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        paths = list(pool.map(lambda s: fetch_step(run, s), run.steps))
     log.info("run %s: %d tp messages, %.1f MB", run.run_id, len(paths),
              sum(p.stat().st_size for p in paths) / 1e6)
     return paths

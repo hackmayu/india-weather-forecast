@@ -7,13 +7,23 @@ from typing import Literal
 import numpy as np
 from fastapi import FastAPI, HTTPException, Path, Query
 
-from . import config, store
+from contextlib import asynccontextmanager
+
+from . import config, refresh, store
 
 # Forecasts are issued every 6 h and appear on the server a few hours later. A run older than
 # this has missed at least two newer issue times, so we label it stale (a UI hint, not a verdict).
 STALE_AFTER = timedelta(hours=18)
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    refresh.start()  # seeds from the dated snapshot; starts the refresh thread only if enabled
+    yield
+    refresh.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Precipitation forecast explorer (ECMWF Open Data IFS)",
     version="0.1.0",
     description=("Precipitation from ECMWF IFS HRES 0.25° open data over India. "
@@ -54,6 +64,11 @@ def ready() -> dict:
     if not ids:
         raise HTTPException(503, "No processed forecast run is available yet.")
     return {"status": "ready", "latest_run": ids[0]}
+
+
+@app.get("/api/status", summary="Latest run id and background-refresh state")
+def status() -> dict:
+    return refresh.status()
 
 
 @app.get("/api/runs", summary="Available processed runs (newest first)")

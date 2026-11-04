@@ -1,0 +1,18 @@
+# Render Blueprint: one free web service serving the API and the built frontend.
+# Free web services sleep after 15 min idle, have an ephemeral disk and cannot run cron jobs, so
+# the app seeds itself from data/snapshot/ and refreshes in a background thread (see refresh.py).
+services:
+  - type: web
+    name: india-rain-forecast
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ./backend && cd frontend && npm ci && npm run build
+    startCommand: cd backend && uvicorn precip.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: PRECIP_AUTO_REFRESH
+        value: "1"
+      - key: PRECIP_KEEP_RAW
+        value: "0"

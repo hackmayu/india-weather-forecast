@@ -26,4 +26,11 @@ at the applicant's direction; decisions are recorded below with who made them.
 - [x] M2: processing + minimal backend (26 tests pass; wet-cell values match source GRIB)
 - [x] M3: map, timeline, location view (checked in browser at desktop and 375px mobile: map, click select, outside-domain message, play/pause; keyboard & screen-reader pass still TODO)
 - [ ] M4: usability + scientific explanations
-- [ ] M5: verify, deploy, document
+- [ ] M5: verify, deploy, document (deploy config + in-app refresh written; refresh path verified on cold disk: 52 s, checksums match; live Render deploy pending applicant signup)
+
+## Deployment decision (2026-11-04)
+Applicant chose a free host with the applicant doing the signup. Claude proposed Render free web
+service (Render docs, checked 2026-11-04: spins down after 15 min idle, ephemeral disk, 750 free
+instance hours/month, no free cron jobs; native Python runtime includes Node/npm; RAM figure NOT
+verified). Refresh therefore runs inside the app (`precip/refresh.py`) seeded by a dated snapshot.
+Hugging Face Spaces was rejected: community posts conflict on whether free Docker Spaces still exist.

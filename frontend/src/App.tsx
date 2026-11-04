@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, fetchMap, fetchPoint, fetchRun, type Kind, type MapResp, type PointResp, type RunMeta } from "./api";
+import { ApiError, fetchMap, fetchPoint, fetchRun, fetchStatus, type Status, type Kind, type MapResp, type PointResp, type RunMeta } from "./api";
 import { THRESHOLDS } from "./colors";
 import Legend from "./Legend";
 import LocationPanel from "./LocationPanel";
@@ -35,8 +35,19 @@ export default function App() {
   const [latIn, setLatIn] = useState("");
   const [lonIn, setLonIn] = useState("");
 
+  const [status, setStatus] = useState<Status | null>(null);
+  useEffect(() => {
+    // Poll the backend's refresh state. We never swap the forecast under the user: a newer run is
+    // announced and loaded only on request.
+    const tick = () => fetchStatus().then(setStatus).catch(() => undefined);
+    tick();
+    const id = window.setInterval(tick, 45_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const loadMeta = useCallback(() => {
     setMetaErr(null);
+    cache.current.clear();
     fetchRun().then(setMeta).catch((e: ApiError) => setMetaErr(e.status === 503
       ? "No forecast has been processed yet. Run the data pipeline first." : e.message));
   }, []);
@@ -129,6 +140,19 @@ export default function App() {
         <p className="banner" role="status">
           This forecast was issued {meta.freshness.age_hours} h ago and newer runs have probably been published. Treat it as out of date.
         </p>
+      )}
+
+      {status?.latest_run && status.latest_run !== meta.run_id && (
+        <p className="banner info" role="status">
+          A newer forecast run ({status.latest_run} UTC) is available.{" "}
+          <button type="button" onClick={() => { setPoint(null); loadMeta(); }}>Load it</button>
+        </p>
+      )}
+      {status?.refreshing && (
+        <p className="banner info" role="status">Checking ECMWF for a newer forecast run… the data shown stays as is until you load it.</p>
+      )}
+      {status?.last_result === "failed" && meta.freshness.stale && (
+        <p className="banner" role="status">The last attempt to fetch a newer forecast failed, so this older run is still shown.</p>
       )}
 
       <main>

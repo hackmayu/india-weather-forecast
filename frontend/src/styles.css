@@ -93,3 +93,4 @@ footer ul { padding-left: 1.1rem; } summary { cursor: pointer; font-weight: 600;
   .readout { min-height: 4.4em; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+.banner.info { background: #e8f0fb; color: #1b3a6e; border-color: #b6c9e8; }
