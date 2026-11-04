@@ -2,8 +2,8 @@
 #
 # Every 30 minutes this job asks ECMWF whether a newer model run (or probability run) exists. Only if so it
 # downloads and processes it (about 2 minutes), builds the static site, and force-pushes the built files as a
-# single commit to the `vercel-live` branch. Vercel (Production Branch = vercel-live) deploys that branch
-# automatically. `main` is never touched by this job, so its history stays the project's own commits.
+# single commit to the `vercel-live` branch, laid out as `frontend/...` so it fits the same Vercel project
+# (Root Directory = frontend). Vercel (Production Branch = vercel-live) deploys that branch automatically. `main` is never touched by this job, so its history stays the project's own commits.
 #
 # No secrets are needed: it uses the workflow's built-in GITHUB_TOKEN (permission: contents write).
 # Note: GitHub disables scheduled workflows after 60 days without repository activity.
@@ -38,8 +38,8 @@ jobs:
           mkdir -p prev
           if git ls-remote --exit-code --heads origin vercel-live >/dev/null 2>&1; then
             git fetch --depth=1 origin vercel-live
-            git archive FETCH_HEAD data | tar -x -C prev
-            echo "previous publish found: $(ls prev/data/runs | tr '\n' ' ')"
+            git archive FETCH_HEAD frontend/data | tar -x -C prev
+            echo "previous publish found: $(ls prev/frontend/data/runs | tr '\n' ' ')"
           else
             echo "no vercel-live branch yet: first publish"
           fi
@@ -60,7 +60,7 @@ jobs:
           PRECIP_KEEP_RAW: "0"
         run: |
           ARGS="--out site-data"
-          if [ -d prev/data ]; then ARGS="$ARGS --previous prev/data"; fi
+          if [ -d prev/frontend/data ]; then ARGS="$ARGS --previous prev/frontend/data"; fi
           if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
           python -m precip.live_static $ARGS
 
@@ -83,12 +83,14 @@ jobs:
       - name: Publish to the vercel-live branch
         if: steps.pipeline.outputs.changed == 'true'
         run: |
-          cp deploy/vercel-static.json frontend/dist/vercel.json
-          cd frontend/dist
+          mkdir -p publish/frontend
+          cp -r frontend/dist/. publish/frontend/
+          cp deploy/vercel-static.json publish/frontend/vercel.json
+          cd publish
           git init -q -b vercel-live
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "Publish static site $(date -u '+%Y-%m-%d %H:%M') UTC"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" vercel-live
-          echo "published: $(cat data/index.json | head -c 400)"
+          echo "published: $(head -c 400 frontend/data/index.json)"

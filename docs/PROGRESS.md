@@ -111,3 +111,6 @@ success path (permission denied in the test browser).
 ## Vercel configuration (2026-11-04)
 - Vercel's import screen suggested a two-service layout. Applicant decision: option A (frontend-only service `web`, no backend, no bindings);
   Vercel showed only the suggestion, no error. Config validated against Vercel's JSON schema; not run on Vercel yet.
+- Update (same day): the applicant sent a screenshot of Vercel's import screen (Services preset, detected backend + frontend) and asked which to select.
+  Claude advised "Import single project -> frontend" (the Services preset would pull in the FastAPI backend), moved the config to `frontend/vercel.json`,
+  removed the root `vercel.json`, and made the Action publish `vercel-live` with a `frontend/` layout so one Vercel project serves both branches.

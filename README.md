@@ -317,7 +317,7 @@ flowchart TB
   R["GitHub repository (main)"]
   E["ECMWF Open Data"]
   R -->|"render.yaml Blueprint"| RN["Render free web service<br/>FastAPI + built UI<br/>refresher thread"]
-  R -->|"vercel.json: npm run build:static"| V1["Vercel from main<br/>dated snapshot"]
+  R -->|"frontend/vercel.json: npm run build:static"| V1["Vercel from main<br/>dated snapshot"]
   GA["GitHub Action, every ~30 min<br/>publish-static.yml"]
   E --> GA
   E --> RN

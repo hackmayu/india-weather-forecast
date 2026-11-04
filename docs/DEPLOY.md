@@ -27,21 +27,25 @@ Git will ask you to sign in to GitHub in your own browser or credential manager.
 
 Facts: Vercel's free (Hobby) plan has no background jobs and a read-only function filesystem, so the live refresh is
 done by a GitHub Action instead (see below). Not verified on Vercel itself: this repo's build was rehearsed locally
-(static build, plain file server with no backend, the Action's shell steps against a local bare repository).
+(clean-clone build with the exact commands, plain file server with no backend, the Action's shell steps against a local bare repository).
 
 **Quick live link (dated snapshot, works immediately after the push)**
 1. Sign in at vercel.com (GitHub sign-in is simplest). **Stop and tell Claude if it asks for a card or a paid plan.**
-2. Add New... -> Project -> import `india-weather-forecast`. Leave every setting as is. `vercel.json` uses Vercel's Services layout
-   with ONE public service, `web` (root `frontend/`, Vite, build command `npm run build:static`, output `dist`) and a catch-all rewrite
-   to it. There is no backend service on Vercel and no service bindings: the browser reads static files under `/data`.
-3. Deploy. The link serves the committed snapshot, labelled **Static snapshot** (it does not update by itself).
+2. Add New... -> Project -> import `india-weather-forecast`.
+3. Vercel lists two detected apps: `backend` (FastAPI, /api) and `frontend` (Vite, /). Click **Import single project** next to **frontend**.
+   Do **not** use the "Services" preset: it would try to deploy the FastAPI backend, which does not belong on Vercel (see the note below).
+4. Leave the settings as they are (Root Directory = `frontend`). `frontend/vercel.json` already sets the install command, the build command
+   (`npm run build:static`), the output directory (`dist`) and the cache headers.
+5. Deploy. The link serves the committed snapshot, labelled **Static snapshot** (it does not update by itself).
 
 **Live updates (recommended)**
-4. GitHub -> repository -> Actions -> **Publish static site (Vercel)** -> Run workflow (tick "force" the first time).
-   Wait ~3-5 minutes: it creates the `vercel-live` branch. (If the run fails, open it and send Claude the log.)
-5. Vercel -> your project -> Settings -> Git -> **Production Branch** = `vercel-live` -> Save, then Deployments ->
-   redeploy the latest `vercel-live` commit.
-6. From now on the job runs about every 30 minutes (GitHub may delay it), downloads a new ECMWF run only when one exists,
+6. GitHub -> repository -> Actions -> **Publish static site (Vercel)** -> Run workflow (tick "force" the first time).
+   Wait ~3-5 minutes: it creates the `vercel-live` branch. (If the run fails, open it and send Claude the log. A permissions error means
+   Settings -> Actions -> General -> Workflow permissions -> "Read and write permissions".)
+7. Vercel -> your project -> Settings -> Git -> **Production Branch** = `vercel-live` -> Save. Keep Root Directory = `frontend`: the branch uses the
+   same folder layout and carries its own `frontend/vercel.json` (no build, output `.`), so nothing else changes.
+8. Deployments -> redeploy the latest `vercel-live` commit.
+9. From now on the job runs about every 30 minutes (GitHub may delay it), downloads a new ECMWF run only when one exists,
    and Vercel redeploys automatically. The status pill shows **Auto-published**.
    GitHub disables scheduled workflows after 60 days without repository activity.
 
@@ -69,11 +73,11 @@ service URL to activate `.github/workflows/keepalive.yml`. It uses ~744 of the 7
   after the session's last message. Do not edit or trim it.
 - Deadline for the final commit: **2026-11-07 14:49 +05:30**.
 
-### Why the Vercel config has one service and no backend (decision recorded 2026-11-04)
-Vercel suggested a two-service layout (FastAPI backend + Vite frontend). The applicant chose the **frontend-only** layout (option A).
-Reasons: a Vercel function cannot run this project's background refresher or write its data files, so a backend service there would
-serve a frozen snapshot, and it could not be tested without a Vercel deploy; the static site already has live updates (GitHub Action
--> `vercel-live`) and parity tests against the real API. The real FastAPI endpoints are deployed on Render (`render.yaml`).
-In Services mode, build keys must live inside the service, which is why `vercel.json` no longer has top-level `buildCommand` etc.
-The file was validated against Vercel's published JSON schema (0 errors); it has not been run on Vercel itself.
-Note: the `vercel-live` branch carries its own classic `vercel.json` (`deploy/vercel-static.json`) because it contains already-built files.
+### Why Vercel gets only the frontend (decisions recorded 2026-11-04)
+Vercel's import screen detects two apps and suggests a "Services" layout (FastAPI backend + Vite frontend). The applicant chose the **frontend-only**
+layout. Reasons: a Vercel function cannot run this project's background refresher or write its data files, so a backend service there would
+serve a frozen snapshot and could not be tested without a deploy; the static site already has live updates (GitHub Action -> `vercel-live`) and parity
+tests against the real API. The real FastAPI endpoints are deployed on Render (`render.yaml`).
+After seeing the actual import screen, the config was moved from a root `vercel.json` in beta "Services" mode to a plain `frontend/vercel.json`
+used with "Import single project", because the Services preset would auto-include the backend and the beta feature adds risk for no benefit.
+Both `frontend/vercel.json` and `deploy/vercel-static.json` were validated against Vercel's published JSON schema (0 errors).
