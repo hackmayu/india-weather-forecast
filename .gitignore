@@ -1,0 +1,25 @@
+# secrets / env
+.env
+*.env.local
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# raw datasets and caches (never commit; reproducible via `python -m precip.fetch`)
+data/raw/
+data/cache/
+*.grib2
+*.grib
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
