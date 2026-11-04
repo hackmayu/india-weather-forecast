@@ -314,3 +314,8 @@ button.chipbtn.now:hover:not(:disabled) { background: rgba(22,163,74,.12); }
 :root[data-theme="dark"] { --skel-a: #1b2430; --skel-b: #232e3d; }
 @media (prefers-reduced-motion: reduce) { .map-skeleton, .panel-skeleton { animation: none; } }
 button, .chip, summary { touch-action: manipulation; }
+.placesearch { position: relative; flex: 1; min-width: 0; }
+.placelist { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 4px; list-style: none; background: var(--panel, #fff); border: 1px solid var(--line, #cfd8e3); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 300px; overflow: auto; }
+.placelist li { padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+.placelist li.on { background: var(--accent-soft, #e3f0ff); }
+.placelist li.muted { cursor: default; }

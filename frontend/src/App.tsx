@@ -8,7 +8,7 @@ import LocationPanel from "./LocationPanel";
 import type { Basemap, Hover } from "./MapView";
 const MapView = lazy(() => import("./MapView"));
 import Timeline from "./Timeline";
-import { CITIES, findCity } from "./cities";
+import PlaceSearch from "./PlaceSearch";
 import { nearestWindow } from "./prob";
 import { rainPreset } from "./blocks";
 import { dayShortcuts, formatTime, fracIndex, indexForNow, localDate, nearestIndex, nextRun, relTime, zoneName, type Zone } from "./time";
@@ -61,7 +61,6 @@ export default function App() {
   const [probPoint, setProbPoint] = useState<ProbPointResp | null>(null);
   const [zone, setZone] = useState<Zone>(urlInit.z ?? "local");
   const [copied, setCopied] = useState(false);
-  const [cityIn, setCityIn] = useState("");
   const [guide, setGuide] = useState(lsGet("guide", "") !== "seen" && new URLSearchParams(location.search).get("guide") !== "0"); // ?guide=0 hides it (for embedding/screenshots)
   const dismissGuide = () => { setGuide(false); lsSet("guide", "seen"); };
   const [playing, setPlaying] = useState(false);
@@ -550,11 +549,7 @@ export default function App() {
             <fieldset>
               <legend>Choose a place</legend>
               <div className="citysearch">
-                <label>Search a city
-                  <input list="city-list" value={cityIn} placeholder="e.g. Pune" autoComplete="off"
-                    onChange={(e) => { setCityIn(e.target.value); const c = findCity(e.target.value); if (c) choosePoint(c.lat, c.lon); }} />
-                </label>
-                <datalist id="city-list">{CITIES.map((c) => <option key={c.name} value={c.name} />)}</datalist>
+                <PlaceSearch onPick={(pl) => choosePoint(pl.lat, pl.lon)} />
                 <button type="button" onClick={useMyLocation} title="Uses your browser's location once; it is only used to look up the nearest forecast grid cell.">📍 Use my location</button>
               </div>
               <div className="presets">
@@ -584,7 +579,8 @@ export default function App() {
 
       <footer>
         <p><strong>Forecast data:</strong> Contains modified ECMWF Open Data (IFS HRES, 0.25°), licensed CC-BY-4.0. Run {meta.run_id} UTC, processed {formatTime(meta.processed_at_utc, zone)}.
-          {" "}<strong>Basemap:</strong> © OpenStreetMap contributors, OpenMapTiles, served by OpenFreeMap; boundaries are as drawn by OpenStreetMap contributors.</p>
+          {" "}<strong>Basemap:</strong> © OpenStreetMap contributors, OpenMapTiles, served by OpenFreeMap; boundaries are as drawn by OpenStreetMap contributors.
+          {" "}<strong>Place names:</strong> <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC-BY 4.0), towns of 1,000+ people.</p>
         <details>
           <summary>What this forecast can and cannot tell you</summary>
           <ul>
