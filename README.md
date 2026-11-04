@@ -18,6 +18,27 @@ Project 1 ("Precipitation forecast app").
   [`docs/PROGRESS.md`](docs/PROGRESS.md).
 - Session start: **2026-11-04 14:49:20 +05:30**. Deadline for the final commit: **2026-11-07 14:49 +05:30**.
 
+## "Real-time": what it does and does not mean
+
+The app shows the **newest published ECMWF model run**. It is near-real-time, not a nowcast and not a
+forecast produced by this project.
+
+- A background refresher checks ECMWF every **10 minutes** and processes a newer run as soon as it is complete.
+  The browser asks the server what it has every 45 s and, with **Auto-switch** on (default), moves to the new
+  run while keeping the selected time and place (a notice is shown; with it off, a banner offers the new run).
+- On opening, the timeline jumps to **now** (the interval that contains the current time); a **Now** button and
+  a *now* marker on the slider and charts show where the current time falls. Steps before now are labelled
+  "Past model step": they are the model's values for times that have passed, **not observations**.
+- A status bar shows run issue time, when ECMWF **published** it (`Last-Modified`), data age, the next run's
+  expected time and the time of the last server check. The expected time uses a *typical* delay measured on
+  the 9 runs of 2026-11-02..04: 00/12 UTC runs appeared 7.57 h and 06/18 UTC runs 6.45 h after issue time.
+  It is an estimate, not a guarantee.
+- **Run-to-run comparison:** the selected place in the previous run vs the current run over the shared period
+  (a forecast change, not a probability).
+- Limits: ECMWF issues a run every 6 h and it appears 6.5-7.6 h later, so the newest run always starts in the
+  past. On the free host the service sleeps when idle (see Deployment); an optional workflow
+  (`.github/workflows/keepalive.yml`, inert until you set `KEEPALIVE_URL`) can keep it awake.
+
 ## Problem and intended users
 
 Raw forecast files are hard to read: precipitation is stored as an *accumulation since the start of the
@@ -140,7 +161,7 @@ Interactive API docs: `http://127.0.0.1:8000/docs`. Optional settings are listed
 ### Verification commands
 
 ```bash
-cd backend  && python -m pytest -q          # 41 tests
+cd backend  && python -m pytest -q          # 44 tests
 cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 ```
 
@@ -199,18 +220,19 @@ observations, alerts, accuracy claims or advice are generated, and no external A
 
 Observed during development (2026-11-04), not aspirational:
 
-- **Backend: 41 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
+- **Backend: 44 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
   noise vs. a real reset error, longitude wrapping, API validation, wind direction.
 - **Real-data checks:** processed values at five places and at the wettest cell (17.25°N 81.5°E,
   75.3 mm in 3 h) match values read straight from the source GRIB with eccodes' own nearest-point search
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 14 unit tests, strict TypeScript, production build.
+- **Frontend:** 24 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
   play/pause, variable switching, basemap fallback (simulated unreachable basemap), no horizontal overflow.
-- **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, the page
-  announced the newer run without swapping data and loaded it on request.
+- **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with
+  Auto-switch off the page announced the newer run without swapping data and loaded it on request; (b) with
+  it on the page switched by itself within the 45 s poll and kept the selected valid time and place.
 - **Keyboard:** radio arrow keys change variable, Enter on a place button selects it, slider arrow keys
   step time with a spoken value, a skip link jumps to the location chooser; all 26 controls have names.
   Not done: testing with an actual screen reader.
@@ -225,7 +247,7 @@ have an ephemeral disk, 750 free instance hours per month, and cannot run cron j
 runtime includes Node/npm. Not verified: the RAM limit, and that `eccodes` installs on Render's Linux build.
 
 Refresh strategy: a dated real snapshot (`data/snapshot/`) seeds the disk on every cold start so the app is
-never blank; a background thread then fetches any newer run (check every 30 min while awake). **While the
+never blank; a background thread then fetches any newer run (check every 10 min while awake). **While the
 service is asleep nothing refreshes**, and the first visitor after a wake-up sees the snapshot (labelled
 with its true age, flagged stale) for roughly 1–4 minutes. The UI says when a refresh is running and offers
 the new run when ready. This is not a continuously updated service.

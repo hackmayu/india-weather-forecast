@@ -1,5 +1,5 @@
 import type { PointResp, RunMeta } from "./api";
-import { buildFacts, buildStory, compass } from "./rainStory";
+import { buildFacts, buildStory, compareRuns, compass } from "./rainStory";
 import { formatTime, type Zone } from "./time";
 
 interface Props {
@@ -10,13 +10,15 @@ interface Props {
   index: number;
   zone: Zone;
   onIndex: (i: number) => void;
+  nowFrac: number | null;
+  prev: { point: PointResp; issueIso: string } | null; // same location in the previous run, if available
 }
 
 const W = 520, PAD = { l: 44, r: 10, t: 8, b: 22 };
 
-function Chart({ title, unit, series, values, kind, index, onIndex, zone, color, fixedMax, autoRange }: {
+function Chart({ title, unit, series, values, kind, index, onIndex, zone, color, fixedMax, autoRange, nowFrac }: {
   title: string; unit: string; series: PointResp["series"]; values: (number | null)[]; kind: "bar" | "line";
-  index: number; onIndex: (i: number) => void; zone: Zone; color?: string; fixedMax?: number; autoRange?: boolean;
+  index: number; onIndex: (i: number) => void; zone: Zone; color?: string; fixedMax?: number; autoRange?: boolean; nowFrac?: number | null;
 }) {
   const H = 130;
   const n = series.length;
@@ -53,6 +55,7 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
         {kind === "bar"
           ? values.map((v, i) => v != null && v > 0 && <rect key={i} x={x(i) - bw / 2} y={y(v)} width={bw} height={y(0) - y(v)} className="bar" />)
           : <polyline className="line" fill="none" style={color ? { stroke: color } : undefined} points={values.map((v, i) => `${x(i)},${y(v ?? 0)}`).join(" ")} />}
+        {nowFrac != null && <g><line x1={x(nowFrac)} x2={x(nowFrac)} y1={PAD.t} y2={H - PAD.b} className="nowline" /><text x={x(nowFrac) + 3} y={PAD.t + 8} className="axis nowtext">now</text></g>}
         <line x1={x(index)} x2={x(index)} y1={PAD.t} y2={H - PAD.b} className="cursor" />
         <text x={8} y={PAD.t + 4} className="axis unit" transform={`rotate(-90 8 ${H / 2})`} textAnchor="middle">{unit}</text>
       </svg>
@@ -60,7 +63,7 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
   );
 }
 
-export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex }: Props) {
+export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev }: Props) {
   if (error) return <section className="panel" aria-live="polite"><h2>Selected location</h2><p className="error" role="alert">{error}</p></section>;
   if (loading && !point) return <section className="panel" aria-busy="true"><h2>Selected location</h2><p>Loading location forecast…</p></section>;
   if (!point) return (
@@ -71,7 +74,9 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
   const story = buildStory(s);
   const facts = buildFacts(s);
   const hasInstant = s[0].temp_c != null;
+  const cmp = prev ? compareRuns(point, prev.point) : null;
   const t = (i: number) => formatTime(s[i].valid_time_utc, zone);
+  const t0 = (iso: string) => formatTime(iso, zone);
   return (
     <section className="panel" aria-live="polite" aria-busy={loading}>
       <h2>Selected location</h2>
@@ -79,15 +84,28 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
         Requested {point.requested.lat.toFixed(2)}°N, {point.requested.lon.toFixed(2)}°E → grid cell centre{" "}
         <strong>{point.grid_point.lat.toFixed(2)}°N, {point.grid_point.lon.toFixed(2)}°E</strong>. {point.method}
       </p>
-      <Chart title="Precipitation in each interval (mm per interval)" unit="mm" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} />
-      <Chart title="Cumulative precipitation since issue time (mm)" unit="mm" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} />
+      <Chart title="Precipitation in each interval (mm per interval)" unit="mm" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
+      <Chart title="Cumulative precipitation since issue time (mm)" unit="mm" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
+
+      {prev && cmp && (
+        <div className="compare">
+          <h3>Compared with the previous run <span className="tag">forecast change, not a probability</span></h3>
+          <p>
+            For the shared period {t0(cmp.startIso)} → {t0(cmp.endIso)}: the previous run (issued {formatTime(prev.issueIso, zone)}) forecast{" "}
+            <strong>{cmp.prevMm.toFixed(1)} mm</strong>; this run forecasts <strong>{cmp.curMm.toFixed(1)} mm</strong>
+            {" "}({cmp.curMm - cmp.prevMm >= 0 ? "+" : "−"}{Math.abs(cmp.curMm - cmp.prevMm).toFixed(1)} mm).
+            Largest interval: {cmp.prevMax.mm.toFixed(1)} mm before, {cmp.curMax.mm.toFixed(1)} mm now.
+          </p>
+          <p className="muted small">Differences between runs show how sensitive the forecast is to its starting data. They are not probabilities or an error estimate, and small changes at amounts under ~0.5 mm are within data precision.</p>
+        </div>
+      )}
 
       {hasInstant && (
         <details className="more-vars" open>
           <summary>Temperature, cloud and wind at this cell</summary>
-          <Chart title="2 m temperature (°C, value at each time)" unit="°C" series={s} values={s.map((p) => p.temp_c ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} color="#d9480f" autoRange />
-          <Chart title="Total cloud cover (%, value at each time)" unit="%" series={s} values={s.map((p) => p.cloud_pct ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} color="#5b6472" fixedMax={100} />
-          <Chart title="10 m wind speed (m/s, value at each time)" unit="m/s" series={s} values={s.map((p) => p.wind_speed_ms ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} color="#0b7285" />
+          <Chart title="2 m temperature (°C, value at each time)" unit="°C" series={s} values={s.map((p) => p.temp_c ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} color="#d9480f" autoRange />
+          <Chart title="Total cloud cover (%, value at each time)" unit="%" series={s} values={s.map((p) => p.cloud_pct ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} color="#5b6472" fixedMax={100} />
+          <Chart title="10 m wind speed (m/s, value at each time)" unit="m/s" series={s} values={s.map((p) => p.wind_speed_ms ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} color="#0b7285" />
           <p className="muted small">These are instantaneous model values at each valid time, not accumulations or daily means.</p>
         </details>
       )}

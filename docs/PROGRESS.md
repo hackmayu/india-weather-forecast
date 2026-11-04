@@ -49,3 +49,12 @@ smooth radar-style map, richer basemap/labels, animation polish, more ECMWF vari
 - Live check of the newer-run path with real data (00 UTC served, 06 UTC added): banner appeared, data not swapped, loaded on request.
 - README written; gzip added to the API (wind field 841 KB -> 71 KB over the wire).
 - Waiting on applicant: GitHub repository URL and Render account (applicant's own steps).
+
+## Real-time upgrade (2026-11-04 evening, requested by applicant: "improve the ui more and real time forecasting")
+- Interpretation (Claude's, stated to applicant): "real time" = near-real-time pickup and presentation of the newest
+  ECMWF run, not a self-made forecast or nowcast, and no non-ECMWF data (observations would break the brief).
+- Measured ECMWF publish delay from Last-Modified on 9 runs: 00/12 UTC +7.57 h, 06/18 UTC +6.45 h.
+- Added: 10-min refresh polling, published time in meta, Now button/marker, past/now/future labels, status bar,
+  auto-switch to new runs (keeps time and place), previous-run comparison, dark theme (auto/light/dark),
+  optional inert keep-alive workflow.
+- Verified with real data: auto-switch 00 UTC -> 06 UTC kept place and valid time.

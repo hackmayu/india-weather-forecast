@@ -1,0 +1,19 @@
+# OPTIONAL and INERT until you opt in. Free Render web services sleep after 15 minutes without traffic,
+# and sleeping stops the in-app refresher. This workflow pings the health endpoint every ~10 minutes to
+# keep the service awake. It does nothing unless the repository variable KEEPALIVE_URL is set
+# (Settings > Secrets and variables > Actions > Variables), e.g. https://your-service.onrender.com
+#
+# Trade-off: staying awake 24/7 uses ~744 of Render's 750 free instance hours in a 31-day month.
+# GitHub may delay scheduled runs and disables them after 60 days without repository activity.
+name: keepalive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    if: ${{ vars.KEEPALIVE_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: curl -fsS --max-time 60 "${{ vars.KEEPALIVE_URL }}/api/health"

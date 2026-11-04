@@ -72,3 +72,27 @@ describe("ramp scales", () => {
     expect(colorAt(s, 80)).toEqual(colorAt(s, 40));
   });
 });
+
+import { compareRuns } from "./rainStory";
+import type { PointResp } from "./api";
+describe("compareRuns", () => {
+  const mkp = (times: string[], cum: number[]): PointResp => ({
+    run_id: "x", requested: { lat: 0, lon: 0 }, grid_point: { lat: 0, lon: 0 }, method: "", units: "mm",
+    series: times.map((t, i) => ({ step_h: i * 6, valid_time_utc: t, cumulative_mm: cum[i], interval_mm: i ? cum[i] - cum[i - 1] : null, interval_hours: i ? 6 : null })),
+  });
+  const T = ["2026-11-04T06:00:00Z", "2026-11-04T12:00:00Z", "2026-11-04T18:00:00Z", "2026-11-05T00:00:00Z"];
+  it("compares totals over the shared period starting at the newer run's issue time", () => {
+    const cur = mkp(T.slice(0, 3), [0, 4, 6]);                                  // newer run: issued 06 UTC
+    const prev = mkp(["2026-11-04T00:00:00Z", ...T], [0, 1, 3, 10, 12]);        // older run issued 00 UTC
+    const c = compareRuns(cur, prev)!;
+    expect(c.startIso).toBe(T[0]);
+    expect(c.endIso).toBe(T[2]);
+    expect(c.curMm).toBe(6);
+    expect(c.prevMm).toBe(9);                                                   // prev: cum(18Z)=10 minus cum(06Z)=1
+    expect(c.curMax.mm).toBe(4);
+    expect(c.prevMax.mm).toBe(7);
+  });
+  it("returns null when the runs share no period", () => {
+    expect(compareRuns(mkp(T.slice(0, 2), [0, 1]), mkp(["2026-11-10T00:00:00Z"], [0]))).toBeNull();
+  });
+});

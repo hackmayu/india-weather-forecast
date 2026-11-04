@@ -10,8 +10,11 @@ const CELL = 0.25;
 export const BASEMAPS = {
   light: "https://tiles.openfreemap.org/styles/positron",
   detailed: "https://tiles.openfreemap.org/styles/liberty",
+  dark: "https://tiles.openfreemap.org/styles/dark",
 } as const;
-export type Basemap = keyof typeof BASEMAPS;
+export type Basemap = "light" | "detailed";
+/** In dark theme the light basemap is swapped for the dark one; "detailed" stays as chosen. */
+export const styleUrl = (basemap: Basemap, dark: boolean) => (dark && basemap === "light" ? BASEMAPS.dark : BASEMAPS[basemap]);
 
 type Quad = [[number, number], [number, number], [number, number], [number, number]];
 const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
@@ -27,6 +30,7 @@ interface Props {
   scale: Scale;
   smooth: boolean;
   basemap: Basemap;
+  dark: boolean;
   marker: { lat: number; lon: number } | null;
   onPick: (lat: number, lon: number) => void;
   onOutside: (lat: number, lon: number) => void;
@@ -35,7 +39,7 @@ interface Props {
 }
 
 export default function MapView(props: Props) {
-  const { data, scale, smooth, basemap, marker } = props;
+  const { data, scale, smooth, basemap, dark, marker } = props;
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const mk = useRef<maplibregl.Marker | null>(null);
@@ -97,7 +101,7 @@ export default function MapView(props: Props) {
     const m = new maplibregl.Map({
       container: box.current,
       // ?offline simulates an unreachable hosted basemap (used to test the fallback path).
-      style: location.search.includes("offline") ? "https://offline.invalid/style.json" : BASEMAPS[latest.current.basemap],
+      style: location.search.includes("offline") ? "https://offline.invalid/style.json" : styleUrl(latest.current.basemap, latest.current.dark),
       bounds: [[d.lon_min - 2, d.lat_min - 2], [d.lon_max + 2, d.lat_max + 2]],
       maxBounds: [[d.lon_min - 25, d.lat_min - 20], [d.lon_max + 25, d.lat_max + 20]],
       attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
@@ -141,8 +145,8 @@ export default function MapView(props: Props) {
 
   useEffect(() => {
     if (firstStyle.current) { firstStyle.current = false; return; }
-    map.current?.setStyle(BASEMAPS[basemap]); // 'style.load' re-installs our layers
-  }, [basemap]);
+    map.current?.setStyle(styleUrl(basemap, dark)); // 'style.load' re-installs our layers
+  }, [basemap, dark]);
 
   useEffect(() => {
     const m = map.current;

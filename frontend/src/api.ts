@@ -2,6 +2,7 @@
 export interface Freshness { age_hours: number; stale: boolean; stale_after_hours: number }
 export interface RunMeta {
   run_id: string; model: string; issue_time_utc: string; processed_at_utc: string;
+  published_at_utc?: string | null; availability_delay_h?: number | null; // when ECMWF made the run available (Last-Modified)
   steps_h: number[]; valid_times_utc: string[]; interval_durations_h: number[];
   domain: { lat_min: number; lat_max: number; lon_min: number; lon_max: number };
   grid: { n_lat: number; n_lon: number; spacing_deg: number };
@@ -56,3 +57,6 @@ export const fetchMap = (runId: string, step: number, variable: VariableId, kind
   get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}`);
 export const fetchPoint = (runId: string, lat: number, lon: number) =>
   get<PointResp>(`/api/runs/${runId}/point?lat=${lat}&lon=${lon}`);
+
+export interface RunSummary { run_id: string; issue_time_utc: string; max_step_h: number }
+export const fetchRuns = () => get<{ runs: RunSummary[] }>("/api/runs");

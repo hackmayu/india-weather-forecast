@@ -9,9 +9,12 @@ interface Props {
   playing: boolean;
   onIndex: (i: number) => void;
   onPlaying: (p: boolean) => void;
+  onNow: () => void;
+  nowFrac: number | null; // fractional step index of the current time, null if outside the forecast horizon
+  nowState: "before" | "within" | "after";
 }
 
-export default function Timeline({ meta, index, minIndex: min, zone, playing, onIndex, onPlaying }: Props) {
+export default function Timeline({ meta, index, minIndex: min, zone, playing, onIndex, onPlaying, onNow, nowFrac, nowState }: Props) {
   const max = meta.steps_h.length - 1;
   const step = (d: number) => onIndex(Math.min(max, Math.max(min, index + d)));
   return (
@@ -19,6 +22,9 @@ export default function Timeline({ meta, index, minIndex: min, zone, playing, on
       <div className="tl-controls">
         <button type="button" onClick={() => onPlaying(!playing)} aria-pressed={playing}>
           {playing ? "⏸ Pause" : "▶ Play"}
+        </button>
+        <button type="button" onClick={onNow} title={nowState === "within" ? "Jump to the current time" : nowState === "after" ? "Current time is after the end of this forecast; jumps to the last step" : "Current time is before this forecast starts"}>
+          ◉ Now
         </button>
         <button type="button" onClick={() => step(-1)} disabled={index <= min} aria-label="Previous time step">◀</button>
         <button type="button" onClick={() => step(1)} disabled={index >= max} aria-label="Next time step">▶</button>
@@ -33,12 +39,17 @@ export default function Timeline({ meta, index, minIndex: min, zone, playing, on
           </select>
         </label>
       </div>
+      <div className="slider-wrap">
+      {nowFrac != null && nowFrac >= min && (
+        <span className="now-mark" style={{ left: `${((nowFrac - min) / (max - min)) * 100}%` }} aria-hidden="true"><i />now</span>
+      )}
       <input
         type="range" min={min} max={max} value={index} step={1}
         onChange={(e) => onIndex(Number(e.target.value))}
         aria-label="Forecast time"
         aria-valuetext={`+${meta.steps_h[index]} hours, ${formatTime(meta.valid_times_utc[index], zone)}`}
       />
+      </div>
       <div className="tl-ends" aria-hidden="true">
         <span>{formatTime(meta.valid_times_utc[min], zone)}</span>
         <span>{formatTime(meta.valid_times_utc[max], zone)}</span>

@@ -1,4 +1,4 @@
-import type { SeriesPoint } from "./api";
+import type { PointResp, SeriesPoint } from "./api";
 
 // Deterministic summary of one grid cell's forecast. Every statement is a direct calculation from
 // the series; there is no probability, observation, warning or advice (see README limitations).
@@ -62,4 +62,38 @@ export function buildFacts(series: SeriesPoint[]): Facts {
   });
   if (cloudN) f.cloudMean = cloudSum / cloudN;
   return f;
+}
+
+// ---- run-to-run comparison ----
+export interface RunComparison {
+  startIso: string; endIso: string;
+  curMm: number; prevMm: number;
+  curMax: { mm: number; endIso: string }; prevMax: { mm: number; endIso: string };
+}
+
+/**
+ * Precipitation over the period both runs cover, starting at the newer run's issue time.
+ * Totals are differences of each run's own cumulative series (exact by construction of tp); the
+ * result shows how much the forecast changed between runs. It is NOT a probability or an error estimate.
+ */
+export function compareRuns(cur: PointResp, prev: PointResp): RunComparison | null {
+  const prevAt = new Map(prev.series.map((s) => [s.valid_time_utc, s]));
+  const start = cur.series[0].valid_time_utc;
+  const startPrev = prevAt.get(start);
+  if (!startPrev) return null;
+  let end: SeriesPoint | undefined;
+  for (const s of cur.series) if (prevAt.has(s.valid_time_utc)) end = s;
+  if (!end || end.valid_time_utc === start) return null;
+  const endPrev = prevAt.get(end.valid_time_utc)!;
+  const maxOf = (rows: SeriesPoint[], from: string, to: string) => {
+    let best = { mm: 0, endIso: from };
+    for (const r of rows) if (r.valid_time_utc > from && r.valid_time_utc <= to && (r.interval_mm ?? 0) > best.mm) best = { mm: r.interval_mm ?? 0, endIso: r.valid_time_utc };
+    return best;
+  };
+  return {
+    startIso: start, endIso: end.valid_time_utc,
+    curMm: end.cumulative_mm - cur.series[0].cumulative_mm,
+    prevMm: endPrev.cumulative_mm - startPrev.cumulative_mm,
+    curMax: maxOf(cur.series, start, end.valid_time_utc), prevMax: maxOf(prev.series, start, end.valid_time_utc),
+  };
 }
