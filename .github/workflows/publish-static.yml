@@ -1,0 +1,94 @@
+# Keeps the Vercel (static) site live without any server.
+#
+# Every 30 minutes this job asks ECMWF whether a newer model run (or probability run) exists. Only if so it
+# downloads and processes it (about 2 minutes), builds the static site, and force-pushes the built files as a
+# single commit to the `vercel-live` branch. Vercel (Production Branch = vercel-live) deploys that branch
+# automatically. `main` is never touched by this job, so its history stays the project's own commits.
+#
+# No secrets are needed: it uses the workflow's built-in GITHUB_TOKEN (permission: contents write).
+# Note: GitHub disables scheduled workflows after 60 days without repository activity.
+name: Publish static site (Vercel)
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild and publish even if ECMWF has nothing new"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-static
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the previously published data (if the branch exists)
+        run: |
+          mkdir -p prev
+          if git ls-remote --exit-code --heads origin vercel-live >/dev/null 2>&1; then
+            git fetch --depth=1 origin vercel-live
+            git archive FETCH_HEAD data | tar -x -C prev
+            echo "previous publish found: $(ls prev/data/runs | tr '\n' ' ')"
+          else
+            echo "no vercel-live branch yet: first publish"
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend
+        run: pip install -e ./backend
+
+      - name: Check ECMWF and build the data (only what is new)
+        id: pipeline
+        env:
+          PRECIP_DATA_DIR: ${{ runner.temp }}/precip
+          PRECIP_KEEP_RAW: "0"
+        run: |
+          ARGS="--out site-data"
+          if [ -d prev/data ]; then ARGS="$ARGS --previous prev/data"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          python -m precip.live_static $ARGS
+
+      - uses: actions/setup-node@v4
+        if: steps.pipeline.outputs.changed == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build the static site
+        if: steps.pipeline.outputs.changed == 'true'
+        run: |
+          rm -rf frontend/static-data
+          cp -r site-data frontend/static-data
+          cd frontend
+          npm ci
+          npm run build:static
+
+      - name: Publish to the vercel-live branch
+        if: steps.pipeline.outputs.changed == 'true'
+        run: |
+          cp deploy/vercel-static.json frontend/dist/vercel.json
+          cd frontend/dist
+          git init -q -b vercel-live
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish static site $(date -u '+%Y-%m-%d %H:%M') UTC"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" vercel-live
+          echo "published: $(cat data/index.json | head -c 400)"

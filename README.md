@@ -41,6 +41,10 @@ forecast produced by this project.
 
 ## Usability features
 
+- **India overview:** a short deterministic summary for the next 24 h (heaviest rain cell and nearest listed city, share of
+  the mapped area reaching 1 and 10 mm, strongest wind). The mapped area includes sea.
+- **Installable:** web app manifest and icon ("Add to home screen"); there is deliberately no offline cache, so data is never stale from a cache.
+
 - **Shareable links:** the address bar always reflects the view (variable, rain total type, valid time, place,
   time zone); "Copy link" shares it. Parameters are strictly validated and ignored if invalid.
 - **Places:** map click, ~40 city search, six one-click cities, latitude/longitude entry, and "Use my location"
@@ -202,7 +206,7 @@ Interactive API docs: `http://127.0.0.1:8000/docs`. Optional settings are listed
 ### Verification commands
 
 ```bash
-cd backend  && python -m pytest -q          # 67 tests
+cd backend  && python -m pytest -q          # 77 tests
 cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 ```
 
@@ -264,14 +268,14 @@ observations, alerts, accuracy claims or advice are generated, and no external A
 
 Observed during development (2026-11-04), not aspirational:
 
-- **Backend: 67 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
+- **Backend: 77 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
   noise vs. a real reset error, longitude wrapping, API validation, wind direction.
 - **Real-data checks:** processed values at five places and at the wettest cell (17.25°N 81.5°E,
   75.3 mm in 3 h) match values read straight from the source GRIB with eccodes' own nearest-point search
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 41 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
+- **Frontend:** 69 unit tests (including 25 parity tests of the browser data engine against the real API) (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
   play/pause, variable switching, shared-link restore (variable, time, place, zone), city search, CSV content, chart hover values, 24 h table, Space/arrow shortcuts, basemap fallback (simulated unreachable basemap), no horizontal overflow.
 - **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with
@@ -283,7 +287,31 @@ Observed during development (2026-11-04), not aspirational:
 - **Cold-start refresh:** on an empty disk the refresher downloaded and processed a run in 52 s
   (precipitation only) and ~3 min 18 s for all five variables.
 
-## Deployment
+## Deployment targets
+
+There are two ways to publish the same app. Both are described step by step in [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+| | Render (backend) | Vercel (static) |
+|---|---|---|
+| What runs | FastAPI + built frontend, background refresher | Only static files; the **browser** computes maps and place series |
+| Data refresh | In-process thread, every 10 min while awake | GitHub Action every ~30 min publishes a new static build to branch `vercel-live` |
+| API endpoints | Yes (`/api/*`, `/docs`) | No server code; `frontend/src/staticData.ts` answers the same requests locally |
+| Cold starts / sleep | Free tier sleeps after 15 min idle | None (CDN files) |
+| Accounts | GitHub + Render | GitHub + Vercel (no tokens or secrets) |
+
+**How the static mode is kept honest.** `precip.export_static` writes the processed arrays as compact binary
+files (rain float32; temperature 0.1 °C, cloud 1 %, wind 0.01 m/s, probabilities 0.1 %). `staticData.ts` re-implements the
+API rules (nearest cell, interval/cumulative/window totals with floor at 0, wind direction, probability windows,
+and the same 422/404/503 messages). `backend/tools/make_golden.py` records the REAL API's answers for the committed
+snapshot and `staticData.test.ts` requires the browser engine to reproduce them from the exported files (full 24 h
+window and temperature grids, sampled cells for other maps, four place series, probability map and table, nine
+error messages). Deliberately breaking the rounding or the probability rounding makes those tests fail (checked).
+The static data is quantised to display precision, so values can differ from the API by at most 0.1 in the last
+shown digit (wind speed 0.1 m/s, temperature 0.1 °C).
+
+The two modes are one codebase: `npm run build` (default) talks to `/api`; `npm run build:static` (Vercel) reads `/data`.
+
+## Deployment (Render details)
 
 Target: one **free Render web service** (`render.yaml`) serving the API and the built frontend.
 Facts checked in Render's docs on 2026-11-04: free services spin down after 15 minutes without traffic,

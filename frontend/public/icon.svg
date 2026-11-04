@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rain cloud">
+  <rect width="512" height="512" rx="96" fill="#2f4fa0"/>
+  <path d="M160 300a72 72 0 0 1 8-143 104 104 0 0 1 200 20 62 62 0 0 1-8 123z" fill="#ffffff"/>
+  <g stroke="#9ccbec" stroke-width="22" stroke-linecap="round">
+    <path d="M190 350l-22 52M262 350l-22 52M334 350l-22 52"/>
+  </g>
+</svg>

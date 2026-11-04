@@ -1,36 +1,14 @@
-// Typed client for the FastAPI backend. All values are mm of water unless stated.
-export interface Freshness { age_hours: number; stale: boolean; stale_after_hours: number }
-export interface RunMeta {
-  run_id: string; model: string; issue_time_utc: string; processed_at_utc: string;
-  published_at_utc?: string | null; availability_delay_h?: number | null; // when ECMWF made the run available (Last-Modified)
-  steps_h: number[]; valid_times_utc: string[]; interval_durations_h: number[];
-  domain: { lat_min: number; lat_max: number; lon_min: number; lon_max: number };
-  grid: { n_lat: number; n_lon: number; spacing_deg: number };
-  quality: { packing_noise_cells_zeroed: number; worst_packing_noise_mm: number };
-  freshness: Freshness; attribution: string;
-}
-export type Kind = "interval" | "cumulative" | "window";
-export type VariableId = "precip" | "temp" | "cloud" | "wind" | "prob";
-export interface MapResp {
-  run_id: string; step_h: number; variable: VariableId; kind: Kind | "instant" | "probability"; valid_time_utc: string;
-  accumulation_hours: number; units: string; lats: number[]; lons: number[]; values: number[][];
-  u?: number[][]; v?: number[][]; // wind components (m/s), present for variable=wind
-}
-export interface SeriesPoint {
-  step_h: number; valid_time_utc: string; cumulative_mm: number;
-  interval_mm: number | null; interval_hours: number | null;
-  // instantaneous fields; absent for runs processed before they were added
-  temp_c?: number; cloud_pct?: number; wind_speed_ms?: number; wind_from_deg?: number;
-}
-export interface PointResp {
-  run_id: string; requested: { lat: number; lon: number }; grid_point: { lat: number; lon: number };
-  method: string; units: "mm"; series: SeriesPoint[];
-}
+// Data access for the UI. Two interchangeable back ends with identical signatures and results:
+//   * network mode (default): the FastAPI service under /api  (Render, local development)
+//   * static mode (VITE_STATIC_DATA=1, e.g. Vercel): prebuilt files under /data, computed in the browser
+//     by staticData.ts using the same rules (parity is tested against golden outputs of the real API).
+import * as staticData from "./staticData";
+import { ApiError } from "./types";
+import type { Kind, MapResp, PointResp, ProbMapResp, ProbMeta, ProbPointResp, RunMeta, RunSummary, Status, VariableId } from "./types";
 
-export class ApiError extends Error {
-  status: number;
-  constructor(status: number, message: string) { super(message); this.status = status; }
-}
+export * from "./types";
+
+export const STATIC_MODE = import.meta.env.VITE_STATIC_DATA === "1";
 
 async function get<T>(path: string): Promise<T> {
   let r: Response;
@@ -47,38 +25,21 @@ async function get<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export interface Status {
-  refreshing: boolean; last_attempt_utc: string | null; last_result: string | null;
-  last_error: string | null; auto_refresh: boolean; latest_run: string | null;
-  probability?: { latest_run: string | null; last_result: string | null; last_error: string | null };
-}
-export const fetchStatus = () => get<Status>("/api/status");
-export const fetchRun = () => get<RunMeta>("/api/runs/latest");
-export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind, hours = 24) =>
-  get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}${kind === "window" ? `&hours=${hours}` : ""}`);
-export const fetchPoint = (runId: string, lat: number, lon: number) =>
-  get<PointResp>(`/api/runs/${runId}/point?lat=${lat}&lon=${lon}`);
+export const fetchStatus = (): Promise<Status> =>
+  STATIC_MODE ? staticData.fetchStatus() : get<Status>("/api/status").then((s) => ({ ...s, mode: "backend" as const }));
+export const fetchRun = (): Promise<RunMeta> => (STATIC_MODE ? staticData.fetchRun() : get<RunMeta>("/api/runs/latest"));
+export const fetchRuns = (): Promise<{ runs: RunSummary[] }> => (STATIC_MODE ? staticData.fetchRuns() : get("/api/runs"));
+export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind, hours = 24): Promise<MapResp> =>
+  STATIC_MODE ? staticData.fetchMap(runId, step, variable, kind, hours)
+    : get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}${kind === "window" ? `&hours=${hours}` : ""}`);
+/** `light` = rain series only. The static engine then skips downloading temperature/cloud/wind files (the run
+ *  comparison needs only rain); the network API always returns everything. */
+export const fetchPoint = (runId: string, lat: number, lon: number, opts?: { light?: boolean }): Promise<PointResp> =>
+  STATIC_MODE ? staticData.fetchPoint(runId, lat, lon, opts) : get<PointResp>(`/api/runs/${runId}/point?lat=${lat}&lon=${lon}`);
 
-export interface RunSummary { run_id: string; issue_time_utc: string; max_step_h: number }
-export const fetchRuns = () => get<{ runs: RunSummary[] }>("/api/runs");
-
-// ---- ECMWF ENS probabilities (official `ep` products) ----
-export interface ProbMeta {
-  run_id: string; issue_time_utc: string; published_at_utc?: string | null; thresholds_mm: number[];
-  windows: { start_h: number; end_h: number; start_utc: string; end_utc: string }[];
-  freshness: { age_hours: number; stale: boolean; stale_after_hours: number }; semantics: string; attribution: string;
-}
-export interface ProbMapResp extends Omit<MapResp, "step_h" | "kind" | "variable"> {
-  step_h?: number; variable: "prob"; kind: "probability"; threshold_mm: number;
-  window: { start_h: number; end_h: number; start_utc: string; end_utc: string }; issue_time_utc: string;
-}
-export interface ProbPointResp {
-  run_id: string; issue_time_utc: string; requested: { lat: number; lon: number }; grid_point: { lat: number; lon: number };
-  method: string; units: "%"; thresholds_mm: number[]; semantics: string;
-  windows: { start_h: number; end_h: number; start_utc: string; end_utc: string; probability_pct: number[] }[];
-}
-export const fetchProbMeta = () => get<ProbMeta>("/api/probability/latest");
-export const fetchProbMap = (runId: string, windowEnd: number, threshold: number) =>
-  get<ProbMapResp>(`/api/probability/${runId}/map?window_end=${windowEnd}&threshold=${threshold}`);
-export const fetchProbPoint = (runId: string, lat: number, lon: number) =>
-  get<ProbPointResp>(`/api/probability/${runId}/point?lat=${lat}&lon=${lon}`);
+export const fetchProbMeta = (): Promise<ProbMeta> => (STATIC_MODE ? staticData.fetchProbMeta() : get<ProbMeta>("/api/probability/latest"));
+export const fetchProbMap = (runId: string, windowEnd: number, threshold: number): Promise<ProbMapResp> =>
+  STATIC_MODE ? staticData.fetchProbMap(runId, windowEnd, threshold)
+    : get<ProbMapResp>(`/api/probability/${runId}/map?window_end=${windowEnd}&threshold=${threshold}`);
+export const fetchProbPoint = (runId: string, lat: number, lon: number): Promise<ProbPointResp> =>
+  STATIC_MODE ? staticData.fetchProbPoint(runId, lat, lon) : get<ProbPointResp>(`/api/probability/${runId}/point?lat=${lat}&lon=${lon}`);

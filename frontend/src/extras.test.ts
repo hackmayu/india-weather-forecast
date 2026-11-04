@@ -103,3 +103,28 @@ describe("cities at a glance", () => {
     expect(buildGlance([{ name: "A", lat: 1, lon: 1, p: mk([0, 0, 0, 0, 1, 2], [1, 1, 1, 1, 1, 1]) }], meta, Date.parse(valid[5]))).toBeNull();
   });
 });
+
+import { nearCity, overviewStats } from "./Overview";
+describe("India overview", () => {
+  const grid = (v: number[][]) => ({ run_id: "x", step_h: 24, variable: "precip" as const, kind: "window" as const, valid_time_utc: "2026-11-05T00:00:00Z",
+    accumulation_hours: 24, units: "mm", lats: [30, 29.75], lons: [77, 77.25, 77.5], values: v });
+  it("finds the heaviest cell and the share of cells reaching 1 and 10 mm", () => {
+    const w = grid([[0, 2, 12], [0.4, 50, 0]]);
+    const s = overviewStats(w, null, "2026-11-04T00:00:00Z");
+    expect(s.maxRainMm).toBe(50);
+    expect(s.maxRainAt).toEqual({ lat: 29.75, lon: 77.25 });
+    expect(s.shareAbove1).toBeCloseTo((3 / 6) * 100);
+    expect(s.shareAbove10).toBeCloseTo((2 / 6) * 100);
+    expect(s.hours).toBe(24);
+  });
+  it("adds the strongest wind cell when a wind grid is given", () => {
+    const wind = { ...grid([[1, 2, 3], [4, 9.5, 1]]), variable: "wind" as const, kind: "instant" as const };
+    const s = overviewStats(grid([[0, 0, 0], [0, 0, 0]]), wind, "2026-11-04T00:00:00Z");
+    expect(s.maxWindMs).toBe(9.5);
+    expect(s.maxWindAt).toEqual({ lat: 29.75, lon: 77.25 });
+  });
+  it("names the nearest listed city within 2 degrees, otherwise nothing", () => {
+    expect(nearCity(28.7, 77.3)?.name).toBe("Delhi");
+    expect(nearCity(0, 0)).toBeNull();
+  });
+});

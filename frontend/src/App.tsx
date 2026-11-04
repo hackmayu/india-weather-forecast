@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, fetchMap, fetchPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type ProbMeta, type ProbPointResp, type RunMeta, type Status, type VariableId } from "./api";
 import { getScale, type Palette } from "./colors";
 import CityOverview from "./CityOverview";
+import Overview from "./Overview";
 import Legend from "./Legend";
 import LocationPanel from "./LocationPanel";
 import MapView, { type Basemap, type Hover } from "./MapView";
@@ -279,7 +280,7 @@ export default function App() {
     fetchRuns().then(async ({ runs }) => {
       const older = runs.find((r) => r.issue_time_utc < meta.issue_time_utc);
       if (!older) return;
-      const p = await fetchPoint(older.run_id, point.requested.lat, point.requested.lon);
+      const p = await fetchPoint(older.run_id, point.requested.lat, point.requested.lon, { light: true });
       if (live) setPrev({ point: p, issueIso: older.issue_time_utc });
     }).catch(() => undefined);
     return () => { live = false; };
@@ -363,6 +364,7 @@ export default function App() {
   else when = { label: "Future", cls: "future", title: "Forecast for a time that has not happened yet." };
   const lastCheckMs = status?.last_attempt_utc ? Date.parse(status.last_attempt_utc) : null;
   const live = !!status?.auto_refresh;
+  const isStatic = status?.mode === "static";
 
   return (
     <div className="app">
@@ -384,8 +386,9 @@ export default function App() {
       </header>
 
       <section className="livebar" aria-label="Forecast status">
-        <span className={`pill ${status?.refreshing ? "busy" : live ? "live" : "idle"}`} title={live ? "This server checks ECMWF for new model runs every 10 minutes." : "This server is not checking for new runs automatically."}>
-          <span className="dot" aria-hidden="true" />{status?.refreshing ? "Checking for a new run…" : live ? "Live updates on" : "Static data"}
+        <span className={`pill ${status?.refreshing ? "busy" : live ? "live" : "idle"}`} title={isStatic ? (live ? "Static site: a scheduled job republishes it when ECMWF releases a new run (checked about every 30 minutes); this page notices new data automatically." : "Static snapshot: the data does not change until the site is rebuilt.")
+          : live ? "This server checks ECMWF for new model runs every 10 minutes." : "This server is not checking for new runs automatically."}>
+          <span className="dot" aria-hidden="true" />{status?.refreshing ? "Checking for a new run…" : live ? (isStatic ? "Auto-published" : "Live updates on") : (isStatic ? "Static snapshot" : "Static data")}
         </span>
         <span className="chip"><b>Run issued</b> {formatTime(meta.issue_time_utc, zone)}</span>
         {pubMs && <span className="chip" title="Time the run became available on the ECMWF server (Last-Modified header)."><b>Published</b> {formatTime(meta.published_at_utc!, zone, false)}{meta.availability_delay_h != null && ` (+${meta.availability_delay_h.toFixed(1)} h)`}</span>}
@@ -393,7 +396,7 @@ export default function App() {
         <span className="chip" title={`Typical delay after issue time, measured from the last 9 runs: about 7.6 h for 00/12 UTC runs and 6.5 h for 06/18 UTC runs. Not guaranteed.`}>
           <b>Next run</b> {nr.overdue ? `expected ${relTime(nr.expectedMs - nowMs)} — later than usual` : `≈ ${formatTime(new Date(nr.expectedMs).toISOString(), zone, false)} (${relTime(nr.expectedMs - nowMs)})`}
         </span>
-        {lastCheckMs && <span className="chip"><b>Last check</b> {relTime(lastCheckMs - nowMs)}</span>}
+        {lastCheckMs && <span className="chip" title={isStatic ? "When the site files were generated." : undefined}><b>{isStatic ? "Site built" : "Last check"}</b> {relTime(lastCheckMs - nowMs)}</span>}
         <label className="chip auto"><input type="checkbox" checked={autoUpdate} onChange={(e) => setAutoUpdate(e.target.checked)} /> Auto-switch to new runs</label>
       </section>
 
@@ -515,6 +518,7 @@ export default function App() {
             </fieldset>
             {notice && <p className="error" role="alert">{notice}</p>}
           </form>
+          <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
           <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
           <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold} />
         </aside>

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:static": "tsc --noEmit && vite build --mode static",
+    "export:data": "cd ../backend && python -m precip.export_static --out ../frontend/static-data --source snapshot --keep 2"
   },
   "dependencies": {
     "maplibre-gl": "^4.7.1",

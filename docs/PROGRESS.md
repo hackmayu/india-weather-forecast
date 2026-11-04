@@ -81,3 +81,15 @@ success path (permission denied in the test browser).
 - Verified against source GRIB (144 comparisons) and against the deterministic run (see DATA_NOTES.md).
 - Claude judgement calls for the applicant to review: thresholds 1/5/10/25/50/100 mm (20 mm skipped as close to 25);
   integer-% display with conventional rounding; nearest-window-end mapping from the 3-hourly timeline.
+
+## Vercel / static mode (2026-11-04 night; applicant: "add more features and make it like we can publish it ... vercel ... as live link")
+- Interpretation (Claude): add Vercel as an additional publishing target, usable without Render.
+- Constraint found: Vercel free has no background threads, read-only filesystem, daily-only cron. So: static export +
+  browser data engine + GitHub Action publishing to `vercel-live`. Rejected: serverless FastAPI (file inclusion and
+  build-order behaviour not verifiable without a Vercel account) and committing data to `main` from a bot (would
+  break the rule that the project's Git history is the session's own commits).
+- Verified locally: parity tests (25) vs real API outputs; mutation checks; static site served by a plain file
+  server with zero API calls; publisher run with real downloads (1 m 42 s, carried over previous run); Action shell
+  steps replayed against a local bare repo. NOT verified: an actual Vercel deploy and an actual GitHub Actions run.
+- Bug found by tests during this work: publisher crashed when no ENS run was available (fixed, tested).
+- New features: India overview card, installable manifest/icon.

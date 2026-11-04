@@ -1,4 +1,8 @@
-# Deployment checklist (Render free web service)
+# Deployment checklist
+
+Two independent options: **Vercel (static, recommended for a quick live link)** and **Render (FastAPI backend)**.
+Sections 1-2 (GitHub) are needed for both.
+
 
 Steps marked **YOU** need your own accounts or credentials; Claude cannot and will not do them.
 Facts about Render were checked in its docs on 2026-11-04: free web services spin down after 15 minutes
@@ -19,14 +23,36 @@ git push -u origin main
 ```
 Git will ask you to sign in to GitHub in your own browser or credential manager. Do not paste tokens into chat.
 
-## 3. Render (YOU)
+## 3a. Vercel (YOU) - static site, no server
+
+Facts: Vercel's free (Hobby) plan has no background jobs and a read-only function filesystem, so the live refresh is
+done by a GitHub Action instead (see below). Not verified on Vercel itself: this repo's build was rehearsed locally
+(static build, plain file server with no backend, the Action's shell steps against a local bare repository).
+
+**Quick live link (dated snapshot, works immediately after the push)**
+1. Sign in at vercel.com (GitHub sign-in is simplest). **Stop and tell Claude if it asks for a card or a paid plan.**
+2. Add New... -> Project -> import `india-weather-forecast`. Leave every setting as is: `vercel.json` already sets the
+   install command, the build command (`npm run build:static`) and the output directory.
+3. Deploy. The link serves the committed snapshot, labelled **Static snapshot** (it does not update by itself).
+
+**Live updates (recommended)**
+4. GitHub -> repository -> Actions -> **Publish static site (Vercel)** -> Run workflow (tick "force" the first time).
+   Wait ~3-5 minutes: it creates the `vercel-live` branch. (If the run fails, open it and send Claude the log.)
+5. Vercel -> your project -> Settings -> Git -> **Production Branch** = `vercel-live` -> Save, then Deployments ->
+   redeploy the latest `vercel-live` commit.
+6. From now on the job runs about every 30 minutes (GitHub may delay it), downloads a new ECMWF run only when one exists,
+   and Vercel redeploys automatically. The status pill shows **Auto-published**.
+   GitHub disables scheduled workflows after 60 days without repository activity.
+
+## 3b. Render (YOU) - FastAPI backend
 1. Sign in at render.com (GitHub sign-in is simplest). **Stop and tell Claude if it asks for a payment method.**
 2. New → **Blueprint** → select the repository → Render reads `render.yaml` (free plan).
 3. Apply. The first build installs Python deps and builds the frontend (a few minutes).
 4. Copy the service URL (`https://india-weather-forecast-xxxx.onrender.com`) and send it to Claude.
 
 ## 4. Claude verifies the live URL
-- `/api/health` and `/api/ready` return 200; `/api/runs` lists the seeded snapshot run.
+- Vercel: the page loads with no `/api` calls, `/data/index.json` lists the runs, the map, places, probabilities work.
+- Render: `/api/health` and `/api/ready` return 200; `/api/runs` lists the seeded snapshot run.
 - The page loads, shows real data, the map and basemap render, click selection works.
 - After a cold start the refresher fetches the newest run (about 3 minutes); `/api/status` shows it.
 - Results are recorded in `README.md` ("Final deliverables") only after they are observed.
