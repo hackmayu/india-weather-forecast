@@ -135,3 +135,12 @@ def point(run_id: str = RunId,
                     "interval_hours": None if i == 0 else r.meta["interval_durations_h"][i - 1]}
                    for i, s in enumerate(steps)],
     }
+
+
+# --- Static frontend (production): serve the built React app from the same origin. -------------
+# Mounted last so /api/* routes win. In development Vite serves the frontend and proxies /api.
+_DIST = config.PROJECT_ROOT / "frontend" / "dist"
+if _DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")
