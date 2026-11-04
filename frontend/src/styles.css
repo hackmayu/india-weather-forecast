@@ -330,3 +330,4 @@ button, .chip, summary { touch-action: manipulation; }
 .placelist li.hdr { font-size: .78rem; padding: 4px 10px; }
 .bystate { display: grid; gap: 6px; margin-top: 8px; }
 .bystate select { width: 100%; }
+.placelist mark { background: none; color: var(--accent, #1f4fa8); text-decoration: underline; text-underline-offset: 2px; }
