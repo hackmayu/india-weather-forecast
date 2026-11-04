@@ -4,7 +4,8 @@
  "resolution_deg": 0.25,
  "source": "https://data.ecmwf.int/forecasts",
  "issue_time_utc": "2026-11-04T00:00:00Z",
- "processed_at_utc": "2026-11-04T10:06:19Z",
+ "published_at_utc": "2026-11-04T07:34:00Z",
+ "processed_at_utc": "2026-11-04T14:05:03Z",
  "variable": "tp (total precipitation)",
  "source_units": "m (converted x1000 to mm)",
  "variables": {

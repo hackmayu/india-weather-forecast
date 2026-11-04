@@ -23,7 +23,7 @@ Git will ask you to sign in to GitHub in your own browser or credential manager.
 1. Sign in at render.com (GitHub sign-in is simplest). **Stop and tell Claude if it asks for a payment method.**
 2. New → **Blueprint** → select the repository → Render reads `render.yaml` (free plan).
 3. Apply. The first build installs Python deps and builds the frontend (a few minutes).
-4. Copy the service URL (`https://india-rain-forecast-xxxx.onrender.com`) and send it to Claude.
+4. Copy the service URL (`https://india-weather-forecast-xxxx.onrender.com`) and send it to Claude.
 
 ## 4. Claude verifies the live URL
 - `/api/health` and `/api/ready` return 200; `/api/runs` lists the seeded snapshot run.
