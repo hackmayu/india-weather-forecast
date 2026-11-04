@@ -119,3 +119,8 @@ export function dayShortcuts(valid: string[], nowMs: number, zone: Zone, minInde
   }
   return chips;
 }
+
+/** Compact label such as "Thu 05:30" (weekday + time, no zone name) for narrow table cells; the zone is stated once in a caption. */
+export function formatShort(iso: string, zone: Zone): string {
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: zone === "utc" ? "UTC" : undefined }).format(new Date(iso));
+}

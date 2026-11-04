@@ -9,6 +9,9 @@ Project 1 ("Precipitation forecast app").
 > deployment (live URL, final commit id) are listed in [Deployment](#deployment) as *pending* until they
 > have actually been done and checked. Nothing here is a claim about results that were not observed.
 
+<p align="center"><img src="docs/img/01-overview.png" alt="The app: map of forecast rain over India for the next 24 hours, a place summary for Mumbai with rain, temperature and wind tiles, and the weather tabs" width="920"></p>
+<p align="center"><em>The running app (screenshot from the real application): forecast rain for the next 24 h, with the place summary for Mumbai.</em></p>
+
 ## Transparency disclosure
 
 - The initial prompt and the project scope were drafted with help in a **separate chat**. No project code
@@ -50,6 +53,22 @@ forecast produced by this project.
   On a phone, tapping the map scrolls to this summary and a "Back to the map" link returns; on desktop it sits beside the map.
 - **Remembers your last place** on this device and shows a friendly "pick a place" start screen with four one-tap cities.
 - **First-visit guide** (3 steps, dismissible, reopenable from "How to use"); icons on the weather tabs; larger touch targets on touch devices.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/img/09-mobile-map.png" alt="Phone layout: status line, weather tabs with icons, rain choices and the map" width="100%"><br><sub><b>On a phone:</b> one-line status, five weather tabs, plain rain choices, then the map.</sub></td>
+<td width="50%" valign="top"><img src="docs/img/10-mobile-place.png" alt="Phone layout after tapping the map: place summary tiles and charts" width="100%"><br><sub><b>After tapping the map</b> the page scrolls to the place summary: big tiles, charts, tables. "Back to the map" returns.</sub></td>
+</tr>
+</table>
+
+<p align="center"><img src="docs/img/06-timeline.png" alt="Timeline with the selected time, Play and step buttons, day shortcuts Now, Tomorrow and weekday buttons, and the slider" width="620"><br><sub>Timeline: day shortcuts, Play, step buttons and the slider. The green mark shows the current time.</sub></p>
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/img/04-place-summary.png" alt="Place summary for Mumbai with three tiles, two charts and the 24-hour summary" width="100%"><br><sub><b>Place summary:</b> the next 24 hours in three numbers, then charts. Green line: now. Dashed line: the selected time.</sub></td>
+<td width="50%" valign="top"><img src="docs/img/07-cities-overview.png" alt="India overview and the cities at a glance table ranked by rain" width="100%"><br><sub><b>India overview and cities at a glance</b> for the next 24 hours (model values, not observations).</sub></td>
+</tr>
+</table>
 
 **More:**
 
@@ -96,6 +115,13 @@ inventing any**, the app also displays ECMWF's own published ensemble probabilit
   frequency, and say nothing about amounts below the chosen threshold. ECMWF's exact method (e.g. member
   counting) is described by ECMWF and was not independently reproduced here.
 
+<table>
+<tr>
+<td width="58%" valign="top"><img src="docs/img/02-rain-chance-map.png" alt="Rain chance map: probability that 24 hour rain reaches 10 mm, with a high chance over the Bay of Bengal coast" width="100%"><br><sub><b>Rain chance map:</b> chance that rain reaches 10 mm in 24 h (ECMWF ensemble).</sub></td>
+<td width="42%" valign="top"><img src="docs/img/05-chance-table.png" alt="Table of chances by 24 hour window and rain amount for one place" width="100%"><br><sub><b>Per place:</b> every window against every amount; the selected window and amount are outlined.</sub></td>
+</tr>
+</table>
+
 ## Problem and intended users
 
 Raw forecast files are hard to read: precipitation is stored as an *accumulation since the start of the
@@ -139,6 +165,15 @@ were verified directly in the GRIB headers. AIFS can be added through the same p
   horizon changes between 90 h and 144 h.
 - Times are shown in local time or UTC (toggle), always with the zone name.
 
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/img/03-wind.png" alt="Wind view: speed colours with arrows showing where the air moves toward" width="100%"><br><sub><b>Wind:</b> colours are speed, arrows point where the air moves toward.</sub></td>
+<td width="50%" valign="top"><img src="docs/img/08-dark.png" alt="Temperature view in the dark theme" width="100%"><br><sub><b>Temperature, dark theme</b> (theme follows your device or can be set).</sub></td>
+</tr>
+</table>
+
+<sub>All pictures in this README are screenshots of the real running application with real ECMWF data (taken 2026-11-04 with Playwright driving Microsoft Edge), not mock-ups.</sub>
+
 Verified details (observed on real data, see [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md)): `tp` is
 cumulative with no resets over 0–144 h; the grid is 1440×721, latitude north→south, **longitude starts
 at 180° and wraps**; no bitmaps/missing values in these messages.
@@ -169,27 +204,185 @@ A location query returns the **nearest 0.25° grid cell** (about 28 km). There i
 the response states this together with the actual grid-cell centre. Coordinates outside 6–38°N, 66–100°E
 are rejected (HTTP 422) and the UI explains why.
 
-## Architecture and data flow
+## Architecture
 
-```
-ECMWF Open Data (data.ecmwf.int)
-   │  .index + HTTP Range, 6 parallel workers            backend/precip/fetch.py
-   ▼
-data/raw/ifs/<run>/<param>_<step>.grib2   (gitignored)
-   │  decode, unit-convert, crop, difference, validate   backend/precip/process.py
-   ▼
-data/processed/<run>/{arrays.npz, meta.json}  (atomic publish; gitignored)
-   │  read-only access                                   backend/precip/store.py
-   ▼
-FastAPI  (backend/precip/api.py)  ──►  /api/*  JSON      + serves frontend/dist
-   ▲                                                      ▲
-   │ background refresher (backend/precip/refresh.py)     │
-   │ seeds from data/snapshot/ on a cold start            │
-   └──────────────────────────────────────────────────────┘
-React + TypeScript + MapLibre (frontend/)  ──►  map, timeline, location panel
+### 1. The big picture
+
+One Python pipeline turns ECMWF's public GRIB files into small processed arrays. Those arrays reach the browser
+in one of two ways: through a FastAPI service (Render) or as static files that the browser reads directly (Vercel).
+The user interface is the same code in both cases.
+
+```mermaid
+flowchart LR
+  subgraph SRC["ECMWF Open Data (data.ecmwf.int)"]
+    D["IFS HRES forecast<br/>tp, 2t, tcc, 10u, 10v"]
+    E["ENS probability products<br/>tpg1 ... tpg100"]
+  end
+  subgraph PIPE["Python pipeline (backend/precip)"]
+    F["fetch.py, ens.py<br/>index + HTTP Range: only needed fields"]
+    P["process.py<br/>units, crop, differences, checks"]
+    S[("processed arrays<br/>arrays.npz + meta.json")]
+  end
+  subgraph OUT["Delivery"]
+    A["FastAPI api.py<br/>/api/* validated JSON"]
+    X["export_static.py<br/>compact binary files"]
+  end
+  subgraph UI["Browser: React + TypeScript + MapLibre"]
+    U["map, timeline, place panel,<br/>probability table"]
+  end
+  D --> F
+  E --> F
+  F --> P --> S
+  S --> A --> U
+  S --> X --> U
 ```
 
-User requests never download or process data. Refreshing runs in a separate thread.
+### 2. Backend modules (`backend/precip/`)
+
+```mermaid
+flowchart TD
+  config["config.py<br/>region, horizon, URLs, switches"]
+  fetch["fetch.py<br/>find newest complete run,<br/>range-download tp/2t/tcc/10u/10v"]
+  ens["ens.py<br/>ECMWF probability fields,<br/>metadata checks"]
+  process["process.py<br/>decode, convert units, crop,<br/>difference, validate"]
+  store["store.py / store_ens.py<br/>read-only, cached by file time"]
+  derive["derive.py<br/>wind direction, window totals"]
+  api["api.py / api_ens.py<br/>endpoints + validation"]
+  refresh["refresh.py<br/>seed from snapshot,<br/>background refresh"]
+  exp["export_static.py<br/>live_static.py"]
+  fetch --> config
+  process --> fetch
+  ens --> fetch
+  ens --> process
+  store --> config
+  api --> store
+  api --> derive
+  api --> refresh
+  refresh --> fetch
+  refresh --> process
+  refresh --> ens
+  exp --> process
+  exp --> ens
+```
+
+Design rules that shaped it:
+
+| Rule | How it is kept |
+|---|---|
+| User requests never download or process data | `api.py` only reads processed files; refreshing runs in a separate thread (or a separate scheduled job) |
+| A half-written run is never served | processing writes to a temporary folder and renames it atomically; a run is listed only when `meta.json` exists |
+| Never guess a unit or a meaning | every GRIB message is checked (name, units, step type, grid, issue time); unknown units or implausible values raise an error |
+| Do not claim more precision than the data has | nearest 0.25 degree cell, no interpolation in values; display smoothing is visual only and can be switched off |
+| One failure must not break everything | probability fetching is optional and isolated; the publisher keeps the previous probabilities if a new fetch fails |
+
+### 3. What happens on one request (backend mode)
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant API as FastAPI (api.py)
+  participant S as store.py (cached arrays)
+  B->>API: GET /api/runs/latest/map?step=48&variable=precip&kind=window&hours=24
+  API->>S: load_run("latest"), reloaded only if the files changed
+  S-->>API: cumulative rain array
+  API->>API: validate step and window, cumulative[end] - cumulative[start], floor at 0, round to 0.1 mm
+  API-->>B: JSON grid (143 KB, about 7 KB gzipped)
+  B->>B: draw as a canvas image on the map (bilinear display smoothing, colour classes)
+```
+
+### 4. How new forecasts arrive (Render)
+
+```mermaid
+sequenceDiagram
+  participant T as Refresher thread (every 10 min)
+  participant E as ECMWF server
+  participant D as Disk
+  participant B as Browser (polls /api/status)
+  T->>E: is the last step of the newest run published?
+  alt a newer complete run exists
+    T->>E: HTTP Range requests for the needed fields only (about 85-135 MB)
+    T->>T: process_run: checks, units, differences
+    T->>D: atomic publish of data/processed/RUN
+  else nothing new
+    T->>T: record "up to date"
+  end
+  B->>D: asks the API and sees a new latest run
+  B->>B: switches run, keeps the chosen place and time, shows a notice
+```
+
+### 5. Two ways to publish the same app
+
+```mermaid
+flowchart TB
+  R["GitHub repository (main)"]
+  E["ECMWF Open Data"]
+  R -->|"render.yaml Blueprint"| RN["Render free web service<br/>FastAPI + built UI<br/>refresher thread"]
+  R -->|"vercel.json: npm run build:static"| V1["Vercel from main<br/>dated snapshot"]
+  GA["GitHub Action, every ~30 min<br/>publish-static.yml"]
+  E --> GA
+  E --> RN
+  GA -->|"only when ECMWF has something new:<br/>process, export, build"| LB["branch vercel-live<br/>built static site"]
+  LB -->|"Vercel Production Branch"| V2["Vercel CDN<br/>auto-published site"]
+```
+
+| | Render | Vercel |
+|---|---|---|
+| Server code | FastAPI, background thread | none, static files only |
+| Where maps and place series are computed | on the server | in the browser (`staticData.ts`) |
+| How it refreshes | in-process, every 10 min while awake | scheduled GitHub Action republishes, about every 30 min |
+| Sleeps when idle | yes (free tier) | no |
+
+### 6. Keeping the static mode honest
+
+The browser engine must give the same answers as the API. A script records the REAL API's answers for the committed
+snapshot (`backend/tools/make_golden.py`), and 25 tests require the browser engine to reproduce them from the exported
+files, including the validation messages. Breaking the rounding on purpose makes those tests fail.
+
+```mermaid
+flowchart LR
+  A["FastAPI endpoints"] -->|"make_golden.py records real answers"| G["golden.json"]
+  X["export_static.py<br/>binary files"] --> S["staticData.ts<br/>same rules, same errors"]
+  G -->|"25 parity tests"| S
+  S --> UI["same UI components"]
+  A --> UI
+```
+
+### 7. Frontend structure (`frontend/src/`)
+
+```mermaid
+flowchart TD
+  App["App.tsx<br/>state: variable, time, place, run"]
+  App --> Map["MapView.tsx + render.ts<br/>basemap, rain/colour layer, wind arrows"]
+  App --> Leg["Legend.tsx"]
+  App --> TL["Timeline.tsx<br/>day chips, slider, play"]
+  App --> LP["LocationPanel.tsx<br/>tiles, charts, tables"]
+  App --> OV["Overview.tsx, CityOverview.tsx"]
+  App --> API["api.ts"]
+  API -->|"default build"| NET["/api (FastAPI)"]
+  API -->|"build --mode static"| ST["staticData.ts<br/>reads /data files"]
+```
+
+### 8. Data formats
+
+| Stage | Format | Size (one 00 UTC run, 49 steps) |
+|---|---|---|
+| Raw download | one GRIB message per field and step, only what is needed | about 134 MB (not stored in git) |
+| Processed | `arrays.npz` (float32 rain, temperature, cloud, wind) + `meta.json` | about 5 MB |
+| Probabilities | `uint16`, tenths of a per cent, 11 windows x 6 amounts | 0.4 MB |
+| Static export | little-endian binary: rain float32, temperature int16 (0.1 degC), cloud uint8, wind int16 (0.01 m/s) | about 8 MB gzipped per run |
+
+### 9. Technology
+
+| Layer | Choice | Why |
+|---|---|---|
+| Data access | `requests`, `eccodes` | ECMWF index files + HTTP Range, official GRIB decoder |
+| Processing | `numpy` | small regional arrays, simple and testable |
+| API | FastAPI + gzip | typed validation, automatic docs at `/docs` |
+| UI | React, TypeScript, Vite, MapLibre GL | maintained libraries, strict types, no map API key |
+| Basemap | OpenFreeMap vector tiles (fallback: bundled outlines) | free, no key, attribution shown |
+| Tests | pytest, vitest | 77 backend and 75 frontend tests |
+| Hosting | Render (backend) and Vercel (static), GitHub Actions for the schedule | free tiers, no paid service needed |
+
 
 ## How to run
 

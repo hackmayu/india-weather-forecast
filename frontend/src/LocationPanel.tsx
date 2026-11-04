@@ -6,7 +6,7 @@ import { colorAt, getScale } from "./colors";
 import { textOn } from "./prob";
 import { csvFilename, toCsv } from "./csv";
 import { buildFacts, buildStory, compareRuns, compass } from "./rainStory";
-import { formatTime, type Zone } from "./time";
+import { formatShort, formatTime, type Zone } from "./time";
 
 interface Props {
   meta: RunMeta;
@@ -150,13 +150,13 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
         <summary>24-hour summary</summary>
         <div className="table-wrap">
           <table>
-            <caption>Blocks of 24 h counted from the run's issue time (they start at model steps so rain totals are exact; calendar days in local time do not line up with 3-hourly steps)</caption>
+            <caption>Blocks of 24 h counted from the run's issue time, in {zone === "utc" ? "UTC" : "your local time"} (they start at model steps so rain totals are exact; calendar days do not line up with 3-hourly steps)</caption>
             <thead><tr><th scope="col">Period</th><th scope="col">Rain (mm)</th>
               {hasInstant && <><th scope="col">Temp min–max (°C)</th><th scope="col">Max wind (m/s)</th><th scope="col">Cloud avg (%)</th></>}</tr></thead>
             <tbody>
               {blocks.map((b) => (
                 <tr key={b.startIdx} aria-current={index > b.startIdx && index <= b.endIdx}>
-                  <th scope="row">{t(b.startIdx)} → {t(b.endIdx)}{b.hours < 24 ? ` (${b.hours} h)` : ""}</th>
+                  <th scope="row" title={`${t(b.startIdx)} → ${t(b.endIdx)}`}>{formatShort(s[b.startIdx].valid_time_utc, zone)} → {formatShort(s[b.endIdx].valid_time_utc, zone)}{b.hours < 24 ? ` (${b.hours} h)` : ""}</th>
                   <td>{b.precipMm < 0.05 ? "<0.1" : b.precipMm.toFixed(1)}</td>
                   {hasInstant && <><td>{b.tMin?.toFixed(1)} – {b.tMax?.toFixed(1)}</td><td>{b.windMax?.toFixed(1)}</td><td>{b.cloudMean != null ? Math.round(b.cloudMean) : ""}</td></>}
                 </tr>
@@ -171,12 +171,12 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
           <summary>Chance of rain at this cell <span className="tag">ECMWF ensemble probability</span></summary>
           <div className="table-wrap">
             <table>
-              <caption>Chance (%) that rain over each 24 h window reaches the amount in the column header. Ensemble run issued {formatTime(prob.issue_time_utc, zone)}. Windows overlap: a new one starts every 12 h.</caption>
+              <caption>Chance (%) that rain over each 24 h window reaches the amount in the column header. Times are in {zone === "utc" ? "UTC" : "your local time zone"}. Ensemble run issued {formatTime(prob.issue_time_utc, zone)}. Windows overlap: a new one starts every 12 h.</caption>
               <thead><tr><th scope="col">24 h window</th>{prob.thresholds_mm.map((t) => <th scope="col" key={t} className={t === threshold ? "sel" : ""}>≥ {t} mm</th>)}</tr></thead>
               <tbody>
                 {prob.windows.map((w) => (
                   <tr key={w.end_h} aria-current={w.end_h === selectedWindowEnd}>
-                    <th scope="row" title={`${formatTime(w.start_utc, zone)} → ${formatTime(w.end_utc, zone)}`}>24 h to {formatTime(w.end_utc, zone)}</th>
+                    <th scope="row" title={`${formatTime(w.start_utc, zone)} → ${formatTime(w.end_utc, zone)}`}>24 h to {formatShort(w.end_utc, zone)}</th>
                     {w.probability_pct.map((pct, i) => {
                       const [r, g, b, a] = colorAt(getScale("prob", "interval", "radar"), pct);
                       return (

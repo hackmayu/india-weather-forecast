@@ -61,7 +61,7 @@ export default function App() {
   const [zone, setZone] = useState<Zone>(urlInit.z ?? "local");
   const [copied, setCopied] = useState(false);
   const [cityIn, setCityIn] = useState("");
-  const [guide, setGuide] = useState(lsGet("guide", "") !== "seen");
+  const [guide, setGuide] = useState(lsGet("guide", "") !== "seen" && new URLSearchParams(location.search).get("guide") !== "0"); // ?guide=0 hides it (for embedding/screenshots)
   const dismissGuide = () => { setGuide(false); lsSet("guide", "seen"); };
   const [playing, setPlaying] = useState(false);
   const [palette, setPalette] = useState<Palette>(lsGet("palette", "radar") as Palette);

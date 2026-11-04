@@ -297,3 +297,11 @@ button.chipbtn.now:hover:not(:disabled) { background: rgba(22,163,74,.12); }
 }
 .readout { min-height: 0 !important; }
 @media (max-width: 860px) { .readout { min-height: 0 !important; } }
+
+/* narrow phones: the five weather tabs share one row instead of overflowing (Wind was cut off) */
+@media (max-width: 560px) {
+  .seg:not(.small) { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; }
+  .seg:not(.small) label { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 2px; font-size: .8rem; text-align: center; line-height: 1.15; }
+  .seg:not(.small) label > span[aria-hidden] { font-size: 1.15rem; }
+}
+.probtable th[scope=row] { position: sticky; left: 0; background: var(--card); z-index: 1; }
