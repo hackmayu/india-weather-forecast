@@ -65,7 +65,11 @@ def test_map_rejects_bad_requests(client, q):
 
 def test_unknown_or_malformed_run(client):
     assert client.get("/api/runs/2020010100").status_code == 404
-    assert client.get("/api/runs/..%2f..").status_code in (404, 422)
+    # Malformed ids never reach the filesystem: the path pattern rejects them first.
+    # (A literal "../.." is normalised by the HTTP client/router before routing, so it is not a
+    # meaningful probe here; the regex ^(\d{10}|latest)$ plus store.RUN_ID_RE are the guards.)
+    assert client.get("/api/runs/12345678901").status_code == 422
+    assert client.get("/api/runs/2026010100x").status_code == 422
     assert client.get("/api/runs/abc").status_code == 422
 
 
