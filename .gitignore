@@ -26,3 +26,4 @@ Thumbs.db
 
 # processed data is regenerated; only the dated snapshot under data/snapshot/ is tracked
 data/processed/
+data/processed_ens/

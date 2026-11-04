@@ -59,6 +59,27 @@ forecast produced by this project.
   focus); skip link to the location chooser. **Dark theme** (auto/light/dark), reduced-motion respected,
   an error boundary instead of a blank page.
 
+## ECMWF ensemble probabilities ("Rain chance")
+
+The main forecast is a single deterministic run with no uncertainty attached. To show uncertainty **without
+inventing any**, the app also displays ECMWF's own published ensemble probability products
+(`type=ep`, parameters `tpg1`…`tpg100`): *the chance that total precipitation over a 24 h window reaches
+1, 5, 10, 25, 50 or 100 mm*. This project computes **no** probability itself.
+
+- Verified on the real data (see [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md)): GRIB product template 9
+  (probability), "above lower limit", units %, 24 h windows starting every 12 h, 0.25° grid identical to the
+  deterministic grid, no missing values. Each message's metadata is checked before use.
+- Available **only for 00 and 12 UTC runs** (no `ep` files exist for 06/18 UTC) and published ~8 h after issue
+  time, so the probability run can be older than the deterministic run; both issue times are always shown.
+- Shown as a map ("Rain chance" tab, amount selector) and as a table per place (windows × amounts).
+  24 h windows end every 12 h while the timeline has 3-hourly steps, so the map uses the window whose end is
+  nearest to the selected time and says how far off it is.
+- Consistency checks at processing time: probabilities lie in 0-100 %, and the chance of a larger amount never
+  exceeds that of a smaller amount (tolerance 0.5 %). On the 2026-11-04 00 UTC run the worst excess was 0.2 %.
+- Interpretation limit: these are probabilities from the model's ensemble, **not** a calibrated real-world
+  frequency, and say nothing about amounts below the chosen threshold. ECMWF's exact method (e.g. member
+  counting) is described by ECMWF and was not independently reproduced here.
+
 ## Problem and intended users
 
 Raw forecast files are hard to read: precipitation is stored as an *accumulation since the start of the
@@ -181,7 +202,7 @@ Interactive API docs: `http://127.0.0.1:8000/docs`. Optional settings are listed
 ### Verification commands
 
 ```bash
-cd backend  && python -m pytest -q          # 51 tests
+cd backend  && python -m pytest -q          # 67 tests
 cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 ```
 
@@ -197,6 +218,9 @@ cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 | `GET /api/runs/{run_id}/times` | valid times and the interval each step closes |
 | `GET /api/runs/{run_id}/map?step=&variable=&kind=&hours=` | regional grid; `variable` = precip, temp, cloud, wind; `kind` = interval, cumulative or window (precip only; `hours` = window length ending at `step`, must land on a model step) |
 | `GET /api/runs/{run_id}/point?lat=&lon=` | time series at the nearest grid cell |
+| `GET /api/probability/runs`, `/api/probability/{run_id}` | ECMWF ENS probability runs and metadata (thresholds, 24 h windows, semantics, freshness) |
+| `GET /api/probability/{run_id}/map?window_end=&threshold=` | probability (%) grid; `window_end` = hours after the ENS run's issue time (24, 36 … 144), `threshold` = 1, 5, 10, 25, 50, 100 mm |
+| `GET /api/probability/{run_id}/point?lat=&lon=` | every window × threshold at the nearest cell |
 
 Validation: run id pattern, step must be a real step of the run, `kind`/`variable` enums, finite in-domain
 coordinates; failures return 404/422/503 with a readable message. Map payloads are JSON at 0.1 mm
@@ -240,14 +264,14 @@ observations, alerts, accuracy claims or advice are generated, and no external A
 
 Observed during development (2026-11-04), not aspirational:
 
-- **Backend: 51 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
+- **Backend: 67 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
   noise vs. a real reset error, longitude wrapping, API validation, wind direction.
 - **Real-data checks:** processed values at five places and at the wettest cell (17.25°N 81.5°E,
   75.3 mm in 3 h) match values read straight from the source GRIB with eccodes' own nearest-point search
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 35 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
+- **Frontend:** 41 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
   play/pause, variable switching, shared-link restore (variable, time, place, zone), city search, CSV content, chart hover values, 24 h table, Space/arrow shortcuts, basemap fallback (simulated unreachable basemap), no horizontal overflow.
 - **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with
@@ -275,9 +299,15 @@ the new run when ready. This is not a continuously updated service.
 **Pending (not yet done at the time of writing):** public repository, Render service, live URL and its
 verification, final commit id. See "Final deliverables" below once filled.
 
+- **Probabilities vs source:** 144 comparisons (6 cells × 4 windows × 6 thresholds) of processed probabilities
+  against values read from the source GRIB with eccodes' own nearest-point search agree within the 0.1 %
+  storage resolution. A directional sanity check against the deterministic run (same run, same grid): where the
+  deterministic 0-24 h total is under 0.1 mm the mean chance of ≥ 1 mm is ~1 %; where it is ≥ 2 mm the mean
+  chance of ≥ 1 mm is ~88 % (4,496 cells).
+
 ## Known limitations and unsupported use
 
-- One **deterministic** model run: no probabilities or uncertainty ranges; later runs may differ a lot.
+- The map, charts and totals come from one **deterministic** model run with no uncertainty attached; later runs may differ a lot. The separate Rain chance view uses ECMWF's ensemble probabilities, which exist only for 00/12 UTC runs and 24 h windows.
 - 0.25° (~28 km) grid cells; it cannot represent street-level or convective-scale detail. Smoothing in the
   display adds no information.
 - Rain amounts below ~0.25 mm are within packing precision; interval totals are uncertain by that much;

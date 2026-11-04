@@ -1,6 +1,8 @@
 import { useState } from "react";
-import type { PointResp, RunMeta } from "./api";
+import type { PointResp, ProbMeta, ProbPointResp, RunMeta } from "./api";
 import { dailyBlocks } from "./blocks";
+import { colorAt, getScale } from "./colors";
+import { textOn } from "./prob";
 import { csvFilename, toCsv } from "./csv";
 import { buildFacts, buildStory, compareRuns, compass } from "./rainStory";
 import { formatTime, type Zone } from "./time";
@@ -15,6 +17,10 @@ interface Props {
   onIndex: (i: number) => void;
   nowFrac: number | null;
   prev: { point: PointResp; issueIso: string } | null; // same location in the previous run, if available
+  prob: ProbPointResp | null;       // ECMWF ensemble probabilities at this cell (separate system, 00/12 UTC runs)
+  probMeta: ProbMeta | null;
+  selectedWindowEnd: number | null; // end hour of the probability window shown on the map
+  threshold: number;
 }
 
 const W = 520, PAD = { l: 44, r: 10, t: 8, b: 22 };
@@ -79,7 +85,7 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
   );
 }
 
-export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev }: Props) {
+export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev, prob, probMeta, selectedWindowEnd, threshold }: Props) {
   if (error) return <section className="panel" aria-live="polite"><h2>Selected location</h2><p className="error" role="alert">{error}</p></section>;
   if (loading && !point) return <section className="panel" aria-busy="true"><h2>Selected location</h2><p>Loading location forecast…</p></section>;
   if (!point) return (
@@ -131,6 +137,35 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
           </table>
         </div>
       </details>
+
+      {prob && probMeta && (
+        <details className="probtable" open>
+          <summary>Chance of rain at this cell <span className="tag">ECMWF ensemble probability</span></summary>
+          <div className="table-wrap">
+            <table>
+              <caption>Chance (%) that rain over each 24 h window reaches the amount in the column header. Ensemble run issued {formatTime(prob.issue_time_utc, zone)}. Windows overlap: a new one starts every 12 h.</caption>
+              <thead><tr><th scope="col">24 h window</th>{prob.thresholds_mm.map((t) => <th scope="col" key={t} className={t === threshold ? "sel" : ""}>≥ {t} mm</th>)}</tr></thead>
+              <tbody>
+                {prob.windows.map((w) => (
+                  <tr key={w.end_h} aria-current={w.end_h === selectedWindowEnd}>
+                    <th scope="row" title={`${formatTime(w.start_utc, zone)} → ${formatTime(w.end_utc, zone)}`}>24 h to {formatTime(w.end_utc, zone)}</th>
+                    {w.probability_pct.map((pct, i) => {
+                      const [r, g, b, a] = colorAt(getScale("prob", "interval", "radar"), pct);
+                      return (
+                        <td key={i} className={`pcell ${prob.thresholds_mm[i] === threshold ? "sel" : ""}`}
+                          style={{ background: `rgba(${r},${g},${b},${a / 255})`, color: textOn(pct) === "light" ? "#fff" : undefined }}>
+                          {pct}%
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted small">{probMeta.semantics} It comes from ECMWF's ensemble system, which is published only for 00 and 12 UTC runs, so it can be older than the deterministic run above. A high chance of a small amount does not mean a large amount is likely.</p>
+        </details>
+      )}
 
       {prev && cmp && (
         <div className="compare">

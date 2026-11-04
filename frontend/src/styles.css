@@ -204,3 +204,12 @@ button.quick { border-color: var(--accent); color: var(--accent); font-weight: 6
   .mapwrap { background: var(--card); }
   .mapwrap .legend { width: auto; }
 }
+
+/* ---- v6: ECMWF probability table ---- */
+.probtable { margin-top: 10px; }
+.probtable summary { cursor: pointer; font-weight: 600; }
+.probtable td.pcell { text-align: right; font-variant-numeric: tabular-nums; min-width: 3.2rem; }
+.probtable th.sel, .probtable td.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.probtable .table-wrap { max-height: none; }
+.probtable th[scope=row] { white-space: nowrap; font-weight: 500; }

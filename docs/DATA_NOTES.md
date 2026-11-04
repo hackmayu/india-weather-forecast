@@ -49,3 +49,21 @@ Fetched per step by the same index+Range method (5 messages/step, 245 per run, ~
   Observed in run 2026-11-04 00 UTC over India: 2t -32.2..39.0 degC, wind max 12.9 m/s.
 - Display smoothing (bilinear between cell centres) is applied only when drawing the map; the API and the
   hover/location readouts always use the 0.25 deg cell values.
+
+## ECMWF ENS probability products (verified 2026-11-04, run 2026-11-04 00 UTC)
+Source: `.../ifs/0p25/enfo/<run>-240h-enfo-ep.grib2` (+ `.index`, Range-requestable; 643 MB file, we fetch 66 messages = 23 MB).
+- Parameters `tpg1, tpg5, tpg10, tpg20, tpg25, tpg50, tpg100`; we use 1, 5, 10, 25, 50, 100 mm.
+- Decoded message (tpg10, 24-48): name "Total precipitation of at least 10 mm", paramId 131062, units `%`,
+  productDefinitionTemplateNumber 9 (probability forecast), probabilityType 3 (above lower limit),
+  lowerLimit 10 (scale factor 0), stepType accum, lengthOfTimeRange 24, regular_ll 1440x721, 12 bits/value,
+  no bitmap, values 0..100.
+- Windows ("0-24", "12-36", ..., "216-240"): 24 h long, a new one every 12 h; we use the 11 that end by +144 h.
+- Availability: files exist for 00 and 12 UTC runs only; for 06 and 18 UTC the `enfo` `ef` files exist but there
+  is no `ep` file. Last-Modified: 08:01 UTC (00 run) and 20:01 UTC (12 run), i.e. about 8 h after issue time.
+- Processing verifies shortName, units, template number, probability type, step range, length, grid, bitmap,
+  issue time and that the lower limit equals the threshold; values must be 0..100 (+-0.1) and the chance must be
+  non-increasing with the threshold (tolerance 0.5 %; observed worst excess 0.2 %).
+- Stored as uint16 tenths of a per cent (447 KB for the whole run).
+- Cross-check with the deterministic run: identical lat/lon grids. 0-24 h window: mean P(>=1 mm) is 87.9 %
+  where the deterministic total is >= 2 mm (4,496 cells) and 0.99 % where it is < 0.1 mm (7,732 cells);
+  P(>=25 mm) averages 71.6 % where the deterministic total is >= 50 mm (24 cells).

@@ -8,9 +8,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("PRECIP_DATA_DIR", PROJECT_ROOT / "data"))
 RAW_DIR = DATA_DIR / "raw"          # downloaded single-field GRIB messages (gitignored)
 PROCESSED_DIR = DATA_DIR / "processed"  # compact artifacts served by the API
+PROCESSED_ENS_DIR = DATA_DIR / "processed_ens"  # ECMWF ENS probability artifacts (separate system, 00/12 UTC only)
 # A dated real-data snapshot committed to git. Used only to seed an empty (ephemeral) disk on a
 # cold start, so the app is never blank; it is labelled with its true issue time and goes "stale".
 SNAPSHOT_DIR = PROJECT_ROOT / "data" / "snapshot"
+SNAPSHOT_ENS_DIR = SNAPSHOT_DIR / "ens"
 
 # Background refresh (deployment). Off by default so tests and local dev make no network calls.
 AUTO_REFRESH = os.environ.get("PRECIP_AUTO_REFRESH", "0") == "1"
@@ -27,6 +29,14 @@ TYPE = "fc"
 
 # Surface parameters fetched per step. tp is cumulative (accum); the others are instantaneous.
 PARAMS = ("tp", "2t", "tcc", "10u", "10v")
+
+# Official ECMWF ensemble probability products (type=ep): "total precipitation of at least X mm" over 24 h.
+ENS_STREAM = "enfo"
+ENS_TYPE = "ep"
+ENS_FILE_END_H = 240          # the file that holds steps 0-240 h; we use windows ending <= ENS_MAX_END_H
+ENS_MAX_END_H = 144
+ENS_THRESHOLDS_MM = (1, 5, 10, 25, 50, 100)
+ENS_KEEP_RUNS = 3
 
 # Region: India (approximate bounding box). Decision approved by applicant 2026-11-04.
 LAT_MIN, LAT_MAX = 6.0, 38.0

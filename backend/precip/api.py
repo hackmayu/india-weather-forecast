@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from contextlib import asynccontextmanager
 
-from . import config, refresh, store
+from . import api_ens, config, refresh, store
 from .derive import wind_from_direction_deg, window_total
 
 # Forecasts are issued every 6 h and appear on the server a few hours later. A run older than
@@ -202,6 +202,9 @@ def point(run_id: str = RunId,
         "units": "mm",
         "series": series,
     }
+
+
+app.include_router(api_ens.router)  # /api/probability/*  (before the static mount)
 
 
 # --- Static frontend (production): serve the built React app from the same origin. -------------

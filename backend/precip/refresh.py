@@ -15,7 +15,7 @@ import shutil
 import threading
 from datetime import datetime, timezone
 
-from . import config, store
+from . import config, ens, store, store_ens
 from .fetch import Run, fetch_run, find_latest_complete_run
 from .process import process_run, prune
 
@@ -24,10 +24,12 @@ log = logging.getLogger("precip.refresh")
 _lock = threading.Lock()
 _stop = threading.Event()
 _state: dict = {"refreshing": False, "last_attempt_utc": None, "last_result": None, "last_error": None}
+_ens_state: dict = {"last_attempt_utc": None, "last_result": None, "last_error": None}
 
 
 def status() -> dict:
-    return {**_state, "auto_refresh": config.AUTO_REFRESH, "latest_run": (store.list_run_ids() or [None])[0]}
+    return {**_state, "auto_refresh": config.AUTO_REFRESH, "latest_run": (store.list_run_ids() or [None])[0],
+            "probability": {**_ens_state, "latest_run": (store_ens.list_ens_run_ids() or [None])[0]}}
 
 
 def seed_from_snapshot() -> int:
@@ -72,9 +74,48 @@ def refresh_once() -> str:
         _lock.release()
 
 
+def seed_ens_from_snapshot() -> int:
+    """Same idea as seed_from_snapshot, for the ENS probability artifacts."""
+    if store_ens.list_ens_run_ids() or not config.SNAPSHOT_ENS_DIR.is_dir():
+        return 0
+    n = 0
+    config.PROCESSED_ENS_DIR.mkdir(parents=True, exist_ok=True)
+    for d in sorted(config.SNAPSHOT_ENS_DIR.iterdir()):
+        if store.RUN_ID_RE.match(d.name) and (d / "meta.json").exists():
+            shutil.copytree(d, config.PROCESSED_ENS_DIR / d.name)
+            n += 1
+    return n
+
+
+def refresh_ens_once() -> str:
+    """Fetch+process the newest published ENS probability run if we do not have it. Never raises:
+    probabilities are an add-on, so a failure here must not affect the deterministic forecast."""
+    _ens_state.update(last_attempt_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    try:
+        run = ens.find_latest_ens_run()
+        if run is None:
+            result = "none_published"
+        elif run.run_id in store_ens.list_ens_run_ids():
+            result = "up_to_date"
+        else:
+            ens.fetch_ens_run(run)
+            ens.process_ens_run(run)
+            ens.prune_ens()
+            if not config.KEEP_RAW:
+                shutil.rmtree(config.RAW_DIR / "ens" / run.run_id, ignore_errors=True)
+            result = f"updated_to_{run.run_id}"
+        _ens_state.update(last_result=result, last_error=None)
+        return result
+    except Exception as e:  # noqa: BLE001
+        log.exception("ENS refresh failed")
+        _ens_state.update(last_result="failed", last_error=f"{type(e).__name__}: {e}"[:300])
+        return "failed"
+
+
 def _loop() -> None:
     while True:
         refresh_once()
+        refresh_ens_once()
         if _stop.wait(config.REFRESH_INTERVAL_S):
             return
 
@@ -82,6 +123,7 @@ def _loop() -> None:
 def start() -> None:
     """Called once at app startup when PRECIP_AUTO_REFRESH=1."""
     seed_from_snapshot()
+    seed_ens_from_snapshot()
     if config.AUTO_REFRESH:
         threading.Thread(target=_loop, name="precip-refresh", daemon=True).start()
 

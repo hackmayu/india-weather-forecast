@@ -1,6 +1,6 @@
 import type { Kind } from "./api";
 
-export type Variable = "precip" | "temp" | "cloud" | "wind";
+export type Variable = "precip" | "temp" | "cloud" | "wind" | "prob";
 export type Palette = "radar" | "accessible";
 
 export interface Stop { v: number; color: string; alpha?: number } // alpha 0..1, default 1
@@ -39,6 +39,12 @@ export function getScale(variable: Variable, kind: Kind, palette: Palette): Scal
         type: "ramp", unit: "%", title: "Total cloud cover (%)",
         stops: [{ v: 0, color: "#ffffff", alpha: 0 }, { v: 30, color: "#cbd2da", alpha: 0.25 },
           { v: 70, color: "#8d97a4", alpha: 0.6 }, { v: 100, color: "#4b5563", alpha: 0.85 }],
+      };
+    case "prob":
+      return {
+        type: "ramp", unit: "%", title: "Chance of reaching the rain amount (%)",
+        stops: [{ v: 0, color: "#ffffff", alpha: 0 }, { v: 5, color: "#dbe9fb", alpha: 0.35 }, { v: 20, color: "#9ccbec" },
+          { v: 40, color: "#4690d0" }, { v: 60, color: "#2f6db8" }, { v: 80, color: "#4a3694" }, { v: 100, color: "#6c2287" }],
       };
     case "wind":
       return {

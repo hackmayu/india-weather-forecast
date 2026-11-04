@@ -10,9 +10,9 @@ export interface RunMeta {
   freshness: Freshness; attribution: string;
 }
 export type Kind = "interval" | "cumulative" | "window";
-export type VariableId = "precip" | "temp" | "cloud" | "wind";
+export type VariableId = "precip" | "temp" | "cloud" | "wind" | "prob";
 export interface MapResp {
-  run_id: string; step_h: number; variable: VariableId; kind: Kind | "instant"; valid_time_utc: string;
+  run_id: string; step_h: number; variable: VariableId; kind: Kind | "instant" | "probability"; valid_time_utc: string;
   accumulation_hours: number; units: string; lats: number[]; lons: number[]; values: number[][];
   u?: number[][]; v?: number[][]; // wind components (m/s), present for variable=wind
 }
@@ -50,6 +50,7 @@ async function get<T>(path: string): Promise<T> {
 export interface Status {
   refreshing: boolean; last_attempt_utc: string | null; last_result: string | null;
   last_error: string | null; auto_refresh: boolean; latest_run: string | null;
+  probability?: { latest_run: string | null; last_result: string | null; last_error: string | null };
 }
 export const fetchStatus = () => get<Status>("/api/status");
 export const fetchRun = () => get<RunMeta>("/api/runs/latest");
@@ -60,3 +61,24 @@ export const fetchPoint = (runId: string, lat: number, lon: number) =>
 
 export interface RunSummary { run_id: string; issue_time_utc: string; max_step_h: number }
 export const fetchRuns = () => get<{ runs: RunSummary[] }>("/api/runs");
+
+// ---- ECMWF ENS probabilities (official `ep` products) ----
+export interface ProbMeta {
+  run_id: string; issue_time_utc: string; published_at_utc?: string | null; thresholds_mm: number[];
+  windows: { start_h: number; end_h: number; start_utc: string; end_utc: string }[];
+  freshness: { age_hours: number; stale: boolean; stale_after_hours: number }; semantics: string; attribution: string;
+}
+export interface ProbMapResp extends Omit<MapResp, "step_h" | "kind" | "variable"> {
+  step_h?: number; variable: "prob"; kind: "probability"; threshold_mm: number;
+  window: { start_h: number; end_h: number; start_utc: string; end_utc: string }; issue_time_utc: string;
+}
+export interface ProbPointResp {
+  run_id: string; issue_time_utc: string; requested: { lat: number; lon: number }; grid_point: { lat: number; lon: number };
+  method: string; units: "%"; thresholds_mm: number[]; semantics: string;
+  windows: { start_h: number; end_h: number; start_utc: string; end_utc: string; probability_pct: number[] }[];
+}
+export const fetchProbMeta = () => get<ProbMeta>("/api/probability/latest");
+export const fetchProbMap = (runId: string, windowEnd: number, threshold: number) =>
+  get<ProbMapResp>(`/api/probability/${runId}/map?window_end=${windowEnd}&threshold=${threshold}`);
+export const fetchProbPoint = (runId: string, lat: number, lon: number) =>
+  get<ProbPointResp>(`/api/probability/${runId}/point?lat=${lat}&lon=${lon}`);

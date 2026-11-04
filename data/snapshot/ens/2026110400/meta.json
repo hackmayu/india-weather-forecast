@@ -1,0 +1,170 @@
+{
+ "run_id": "2026110400",
+ "product": "ECMWF ENS probability of total precipitation >= threshold over 24 h (type=ep, tpg*)",
+ "source": "https://data.ecmwf.int/forecasts",
+ "issue_time_utc": "2026-11-04T00:00:00Z",
+ "published_at_utc": "2026-11-04T08:01:00Z",
+ "processed_at_utc": "2026-11-04T14:37:59Z",
+ "thresholds_mm": [
+  1,
+  5,
+  10,
+  25,
+  50,
+  100
+ ],
+ "windows": [
+  {
+   "start_h": 0,
+   "end_h": 24,
+   "start_utc": "2026-11-04T00:00:00Z",
+   "end_utc": "2026-11-05T00:00:00Z"
+  },
+  {
+   "start_h": 12,
+   "end_h": 36,
+   "start_utc": "2026-11-04T12:00:00Z",
+   "end_utc": "2026-11-05T12:00:00Z"
+  },
+  {
+   "start_h": 24,
+   "end_h": 48,
+   "start_utc": "2026-11-05T00:00:00Z",
+   "end_utc": "2026-11-06T00:00:00Z"
+  },
+  {
+   "start_h": 36,
+   "end_h": 60,
+   "start_utc": "2026-11-05T12:00:00Z",
+   "end_utc": "2026-11-06T12:00:00Z"
+  },
+  {
+   "start_h": 48,
+   "end_h": 72,
+   "start_utc": "2026-11-06T00:00:00Z",
+   "end_utc": "2026-11-07T00:00:00Z"
+  },
+  {
+   "start_h": 60,
+   "end_h": 84,
+   "start_utc": "2026-11-06T12:00:00Z",
+   "end_utc": "2026-11-07T12:00:00Z"
+  },
+  {
+   "start_h": 72,
+   "end_h": 96,
+   "start_utc": "2026-11-07T00:00:00Z",
+   "end_utc": "2026-11-08T00:00:00Z"
+  },
+  {
+   "start_h": 84,
+   "end_h": 108,
+   "start_utc": "2026-11-07T12:00:00Z",
+   "end_utc": "2026-11-08T12:00:00Z"
+  },
+  {
+   "start_h": 96,
+   "end_h": 120,
+   "start_utc": "2026-11-08T00:00:00Z",
+   "end_utc": "2026-11-09T00:00:00Z"
+  },
+  {
+   "start_h": 108,
+   "end_h": 132,
+   "start_utc": "2026-11-08T12:00:00Z",
+   "end_utc": "2026-11-09T12:00:00Z"
+  },
+  {
+   "start_h": 120,
+   "end_h": 144,
+   "start_utc": "2026-11-09T00:00:00Z",
+   "end_utc": "2026-11-10T00:00:00Z"
+  }
+ ],
+ "units": "%",
+ "scale": 10,
+ "domain": {
+  "lat_min": 6.0,
+  "lat_max": 38.0,
+  "lon_min": 66.0,
+  "lon_max": 100.0
+ },
+ "grid": {
+  "n_lat": 129,
+  "n_lon": 137,
+  "spacing_deg": 0.25
+ },
+ "quality": {
+  "worst_monotonic_excess_pct": 0.2,
+  "max_probability_pct": 100.0
+ },
+ "semantics": "Probability, computed by ECMWF from its ensemble forecast, that total precipitation over the 24 h window reaches the threshold. Not computed by this project and not a calibrated real-world frequency.",
+ "raw_sha256": {
+  "tpg1_0-24": "f3877568c1b58862b88a5aea368ff0a4c7b91490cf71388abcc6c523ea1223e8",
+  "tpg5_0-24": "54fcad1d5daeb0c411b89a91a58ba928f2a53f90cc55c09ca51426acbd2a7441",
+  "tpg10_0-24": "5ff46c656b10d99bc996f3dabcf6884f7a3415147cf1735848a6a7b10a0afd77",
+  "tpg25_0-24": "10224bf6c92e88bf8bd72a48105af35ebe0b33be72a2bcbd22a6463049351330",
+  "tpg50_0-24": "77e2af3f211e4490e523e57f3b2cc81fc7a678069da74d86cbd9504c329949a8",
+  "tpg100_0-24": "a25c14014a48c6dbb877c250ff06b6c68dc9c05f28d6d6ff0589a85acc749fd3",
+  "tpg1_12-36": "332817ed9e97a2b5f9b6d09389b2a73aa644aac2dcd71406e689c3a5e1a292a8",
+  "tpg5_12-36": "21fbc85a149143ea39adfed358ff063d2e7ecb03db9bd44c38b56a5ba1159735",
+  "tpg10_12-36": "7b30980d4469b4b32a966a8c8d071623a0108f88238ef76cc09cd70fc6f0f73f",
+  "tpg25_12-36": "559f907f864fe2909aefe0ec9c48e4095f5448f71dbbcc599a71043c2016b86e",
+  "tpg50_12-36": "65cb0efb30db0b3c0b22f1ecc319e6c2ff8cb4634602a6f9b816838e1fb6bcb1",
+  "tpg100_12-36": "0a336b739f06334d00e427810057d78ee3a19caa1e31c3b24adbc5bedb47c068",
+  "tpg1_24-48": "aae843b5fe87599a85712a5ed463d8a14b0741588013d6e21629f8a666b536c2",
+  "tpg5_24-48": "0adefe7cacfc9ff44c2a6201b5e1eacbb4daf4429b90af47fda2fd83e45335a3",
+  "tpg10_24-48": "f2851b798443463e4038d20071b2929b5007ee9901f4c65ef42d54bd73936fa0",
+  "tpg25_24-48": "df64631341fef02bb5143bb25992847976b0f78854bdf6224b7635e1c1ae9dc0",
+  "tpg50_24-48": "8a749e366848cae558832e1ec303488dcd282b114e4ac93e80f9e14041691f40",
+  "tpg100_24-48": "eb5798606d0c4065a0206f42010024bcb374ed67197bbc792ac3e21a35d9146c",
+  "tpg1_36-60": "11f7b475aa9eff7e0346b538e635b597aad0d4cbcb2697175494e1706bbb40b1",
+  "tpg5_36-60": "778a22f2ddb7c5cabc780adfd59e64f34c59206481f1ab3ee6a39231c9a9ef53",
+  "tpg10_36-60": "8c4f279f81d5210747bb03df7e1c8dfb1ad0634c51032c6538dca56cce7d52c3",
+  "tpg25_36-60": "e52f6ef278cd6c4f40ef288e04ae0fd12c91c04bd5c802a5f4e1ed82b4551744",
+  "tpg50_36-60": "147cbadacf4a6ddb0e9cd405a849c94c7bd3be0544eb85d3c441d9c80ba63e99",
+  "tpg100_36-60": "aafa71b61b680b34c0eb0c525975ddd3bc866fb6e460b385a9da2e6e9358f90e",
+  "tpg1_48-72": "f460b8de57be93d58b04740677d3242d45a20d8e35aa136f74dc888c296e9e12",
+  "tpg5_48-72": "acf06ecd766d5c0d5ea670afb7001a76c745f278612a8de1046256a3b39db9ae",
+  "tpg10_48-72": "1b30dacca3a374805e2e80cba4f13d5c434e6aa358c4ebe8d2c2f5d009d5cbf6",
+  "tpg25_48-72": "b170441fa162ac326ae49c5571ca3a70db075d3b06f9caadb4c8c0769f064957",
+  "tpg50_48-72": "14309eb2fd92f092cab4a92c53781871d8170dd28a3d33c0645df26ce5208824",
+  "tpg100_48-72": "0342aa40e547db23f21251beae753fbeaf909aa8c6b7b267785cbd2b13151549",
+  "tpg1_60-84": "3f25f0c26e9cc5732674bb697d6dbc72f5ab217ad31b21b4bcd77d91d90ba89c",
+  "tpg5_60-84": "66faf4012cc4072865c254d860b5e1fe0ed5c1b3f32eaf3eb9723c75733dac0e",
+  "tpg10_60-84": "e4ef16244ee9d6393518c7ad148ef2a5fedb861ac1b03f371ebb9c39b256300f",
+  "tpg25_60-84": "47efc3624b929fa12bdb82a91d061ee0113418fbc68abef9a66fe3e20df041b3",
+  "tpg50_60-84": "70b40a000f9c7f33d2d781aecf37ddaae46e5bc1f1fb4ca7f31086faf2f47c12",
+  "tpg100_60-84": "13c2d6942ae990db7930de888998311a842306bfaeef5d60e14fdf0139bf74b2",
+  "tpg1_72-96": "510c73a9f804d0c0aae92c815a8d81393ed6b5a6b24ba84bbdd0f0544ae0c818",
+  "tpg5_72-96": "46341573e81ef3648ab9e7265407983a247edb1d353c6000ffe22c6838f2e791",
+  "tpg10_72-96": "571ab6cc62e4c15c872aae853ea5a1ff512cffb802d916cf5957a3d9c6af797f",
+  "tpg25_72-96": "1e481c86063f4789c9c543e7cd3c003e6298bbd18a9d4d5b1bc9aca43d7eeaed",
+  "tpg50_72-96": "fd4029eaa6b27e6843e560eb70edc7c8afe90f8e4cd9ec7e79a550bd46e280ab",
+  "tpg100_72-96": "730987842053e08c859aedd431c04441540f5628fc0d6a0dbdcbe26d50459d29",
+  "tpg1_84-108": "7f40258cc27489368d2996590b33c3fc2db6d829c7b28611678f61f942737fbb",
+  "tpg5_84-108": "fd7b0a09ec3a8d072045884f61aaec579d9fa7bf14dac589017989603a7f4f2f",
+  "tpg10_84-108": "be38d8bbc1c83508ef01646cd3bccaca1f7523a9716b889c97739a1e468cecf9",
+  "tpg25_84-108": "a234f3d16acfab01eec1270d95bcad4ab2c4e89c0b63d3bab7afc35a075be83f",
+  "tpg50_84-108": "d87d3d4a6b07012d1ec988ba06e01562faa8626dc66b6cbdc54d0dc76dd01f0b",
+  "tpg100_84-108": "0b2e3e67a172e5282cbb1f7dacc743e3cecf68b352a22d201bf5cd0dc62a458e",
+  "tpg1_96-120": "be47f47d20c142f414b2b6200fe08d513ddff1e02c713b34c6292e62e59c052c",
+  "tpg5_96-120": "3d0cc459db06e4ccc00c17bc2c7d73b529bd223ccabb8f3cbf9b47a43c1de0f9",
+  "tpg10_96-120": "5bc2d5e502b5c3c7f61223ef9f7f73c6a75eaf613242045ec487908bf06a0ad6",
+  "tpg25_96-120": "38c5b812a9242ac9fde4a6668dd2c131b5160788f9dded3a3f5121e7f05d522d",
+  "tpg50_96-120": "34b1ec96c86f3263ffcda723991b0c79eb8462aa62b5a7fd62c258924de4dc22",
+  "tpg100_96-120": "b3f7bfb0a28e4ffbeb62d358d7505127781fa3e757565876db60717552ba6f67",
+  "tpg1_108-132": "36853f4c3d7357b63200d4e0a230743807878e20ecbf00c504cdcc0138ad0fc1",
+  "tpg5_108-132": "5ca21c008a0df8a2d3dd53a913fc1fd7dda67d39af3febbca83dd1eb372bc09c",
+  "tpg10_108-132": "7c0b51faab13911906695841005c86928ab2ead5e024da6823a47d83c2170f7f",
+  "tpg25_108-132": "d10c7ac47d1d0c0783def678bb2674e323d54f1175e5dd951821056a6d028d47",
+  "tpg50_108-132": "83d50c722bbbbb1c4b7a351d8ec995b8dd266d7265c5bed4a7339eee0a439e28",
+  "tpg100_108-132": "eac7b156c73742a454fb06f189622dcf7848e4c8b0bfd800f7d3a4e384d222e5",
+  "tpg1_120-144": "c0b63a0d09ff2f0c92eab501bef4ab4cde18d89a28d4a9aeeeeb1ccb46a59182",
+  "tpg5_120-144": "d0358b6abe7a7ec0eb1f8ec2c099e642d5a98d490f0cdad0c1e50b5c8f27f8d8",
+  "tpg10_120-144": "ad9b6cb22f3870062e7aee7b743477d7b2a0cc24d3fb7f656c8afe65fc079220",
+  "tpg25_120-144": "440bd3ab171241da3f02c1bfa5c5db3b1d56b4072720e008414a0a856c1144b8",
+  "tpg50_120-144": "37d88586ebf51d8d7af68d6e1cbc9025ab92af626b05a9b8d03311d75a4fd78a",
+  "tpg100_120-144": "23d204f4c072bd7d47d55858caaa299e228888eff2c9fa7bdba25da27ddb5c04"
+ }
+}

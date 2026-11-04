@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, fetchMap, fetchPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type RunMeta, type Status, type VariableId } from "./api";
+import { ApiError, fetchMap, fetchPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type ProbMeta, type ProbPointResp, type RunMeta, type Status, type VariableId } from "./api";
 import { getScale, type Palette } from "./colors";
 import CityOverview from "./CityOverview";
 import Legend from "./Legend";
@@ -7,6 +7,7 @@ import LocationPanel from "./LocationPanel";
 import MapView, { type Basemap, type Hover } from "./MapView";
 import Timeline from "./Timeline";
 import { CITIES, findCity } from "./cities";
+import { nearestWindow } from "./prob";
 import { formatTime, fracIndex, indexForNow, nearestIndex, nextRun, relTime, zoneName, type Zone } from "./time";
 import { buildSearch, parseUrl } from "./urlState";
 
@@ -19,10 +20,12 @@ const VARIABLES: { id: VariableId; label: string; blurb: string }[] = [
   { id: "precip", label: "Rain", blurb: "precipitation" },
   { id: "temp", label: "Temperature", blurb: "2 m air temperature" },
   { id: "cloud", label: "Cloud", blurb: "total cloud cover" },
+  { id: "prob", label: "Rain chance", blurb: "chance (ECMWF ensemble probability) that 24 h rain reaches the chosen amount" },
   { id: "wind", label: "Wind", blurb: "10 m wind (speed colours, arrows show where the air moves toward)" },
 ];
 const PLAY_MS = 900;
 const WINDOW_OPTIONS = [6, 12, 24, 48, 72];
+const PROB_THRESHOLDS = [1, 5, 10, 25, 50, 100]; // mm; the amounts ECMWF publishes probabilities for
 
 /** First selectable step index: interval totals need a previous step; a window needs `hours` of run before it. */
 function minIndexFor(steps: number[] | undefined, variable: VariableId, kind: Kind, hours: number): number {
@@ -49,6 +52,10 @@ export default function App() {
   const [variable, setVariable] = useState<VariableId>(urlInit.v ?? "precip");
   const [kind, setKind] = useState<Kind>(urlInit.k ?? "interval");
   const [windowHours, setWindowHours] = useState<number>(urlInit.h ?? 24);
+  const [threshold, setThreshold] = useState<number>(urlInit.p ?? 1);
+  const [probMeta, setProbMeta] = useState<ProbMeta | null>(null);
+  const [probErr, setProbErr] = useState<string | null>(null);
+  const [probPoint, setProbPoint] = useState<ProbPointResp | null>(null);
   const [zone, setZone] = useState<Zone>(urlInit.z ?? "local");
   const [copied, setCopied] = useState(false);
   const [cityIn, setCityIn] = useState("");
@@ -106,6 +113,16 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
 
+  // ECMWF ENS probability run (a separate system: 00/12 UTC only). Its absence must never break the app.
+  const probLatest = status?.probability?.latest_run ?? null;
+  useEffect(() => {
+    let live = true;
+    fetchProbMeta()
+      .then((m) => { if (live) { setProbMeta(m); setProbErr(null); } })
+      .catch((e: Error) => { if (live) { setProbMeta(null); setProbErr(e.message); } });
+    return () => { live = false; };
+  }, [probLatest]);
+
   const loadMeta = useCallback(() => {
     setMetaErr(null);
     cache.current.clear();
@@ -148,9 +165,9 @@ export default function App() {
   useEffect(() => {
     if (!meta || firstLoad.current) return;
     const t = meta.valid_times_utc[Math.min(index, meta.valid_times_utc.length - 1)];
-    const next = buildSearch(location.search, { v: variable, k: kind, h: windowHours, t, lat: loc?.lat, lon: loc?.lon, z: zone }) + location.hash;
+    const next = buildSearch(location.search, { v: variable, k: kind, h: windowHours, p: threshold, t, lat: loc?.lat, lon: loc?.lon, z: zone }) + location.hash;
     if (next !== location.search + location.hash) history.replaceState(null, "", location.pathname + next);
-  }, [meta, index, variable, kind, windowHours, loc, zone]);
+  }, [meta, index, variable, kind, windowHours, threshold, loc, zone]);
 
   // Keyboard shortcuts (only when focus is not on a control or the map): Space play/pause, arrows step, N = now.
   useEffect(() => {
@@ -187,6 +204,20 @@ export default function App() {
   useEffect(() => {
     if (!meta || index < minIndex || index >= meta.steps_h.length) return;
     const step = meta.steps_h[index];
+    if (variable === "prob") {
+      if (!probMeta) { setMapData(null); setMapErr(probErr ?? "Loading probabilities…"); return; }
+      const w = nearestWindow(probMeta.windows, Date.parse(meta.valid_times_utc[index])).window;
+      const pkey = `prob|${probMeta.run_id}|${w.end_h}|${threshold}`;
+      const phit = cache.current.get(pkey);
+      if (phit) { setMapData(phit); setMapErr(null); return; }
+      let alive = true;
+      setMapLoading(true); setMapErr(null);
+      fetchProbMap(probMeta.run_id, w.end_h, threshold)
+        .then((d) => { const m = { ...d, step_h: w.end_h } as unknown as MapResp; cache.current.set(pkey, m); if (alive) setMapData(m); })
+        .catch((e: Error) => { if (alive) setMapErr(e.message); })
+        .finally(() => { if (alive) setMapLoading(false); });
+      return () => { alive = false; };
+    }
     const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}`;
     const hit = cache.current.get(key);
     if (hit) { setMapData(hit); setMapErr(null); return; }
@@ -197,11 +228,11 @@ export default function App() {
       .catch((e: Error) => { if (live) setMapErr(e.message); })
       .finally(() => { if (live) setMapLoading(false); });
     return () => { live = false; };
-  }, [meta, index, variable, kind, windowHours, retry, minIndex]);
+  }, [meta, index, variable, kind, windowHours, retry, minIndex, probMeta, probErr, threshold]);
 
   // Prefetch the next step so playback is smooth.
   useEffect(() => {
-    if (!meta || index + 1 >= meta.steps_h.length) return;
+    if (!meta || variable === "prob" || index + 1 >= meta.steps_h.length) return;
     const step = meta.steps_h[index + 1];
     const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}`;
     if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind, windowHours).then((d) => cache.current.set(key, d)).catch(() => undefined);
@@ -230,6 +261,15 @@ export default function App() {
     if (meta && loc && point && point.run_id !== meta.run_id) choosePoint(loc.lat, loc.lon);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.run_id]);
+
+  // Chance-of-rain table for the selected place (same ENS run as the probability map).
+  useEffect(() => {
+    setProbPoint(null);
+    if (!point || !probMeta) return;
+    let alive = true;
+    fetchProbPoint(probMeta.run_id, point.requested.lat, point.requested.lon).then((p) => { if (alive) setProbPoint(p); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [point, probMeta]);
 
   // Same place in the previous run, for the run-to-run comparison.
   useEffect(() => {
@@ -294,8 +334,10 @@ export default function App() {
     setIndex(nearestIndex(meta.valid_times_utc, nowMs + h * HOUR));
   };
   const legendTitle = variable === "precip" && kind === "interval" ? `Precipitation in the ${durH || 3} h interval (mm of water)`
+    : variable === "prob" ? `Chance that 24 h rain reaches ${threshold} mm (%) — ECMWF ensemble`
     : variable === "precip" && kind === "window" ? `Precipitation over the ${windowHours} h ending at the valid time (mm of water)` : scale.title;
-  const fmtHover = (v: number) => (variable === "cloud" ? Math.round(v) : v.toFixed(1)) + " " + (mapData?.units ?? "");
+  const fmtHover = (v: number) => (variable === "cloud" || variable === "prob" ? Math.round(v) : v.toFixed(1)) + " " + (mapData?.units ?? "");
+  const probWin = variable === "prob" && probMeta ? nearestWindow(probMeta.windows, Date.parse(meta.valid_times_utc[safeIndex])) : null;
 
   // ---- real-time context (browser clock vs forecast timeline) ----
   const issueMs = Date.parse(meta.issue_time_utc);
@@ -309,7 +351,12 @@ export default function App() {
   const isInterval = variable === "precip" && kind === "interval";
   const isWindow = variable === "precip" && kind === "window";
   let when: { label: string; cls: string; title: string };
-  if (isWindow && nowMs >= validMs - windowHours * HOUR && nowMs < validMs) when = { label: "Includes now", cls: "now", title: "The current time falls inside this window." };
+  if (variable === "prob" && probWin) {
+    const ws = Date.parse(probWin.window.start_utc), we = Date.parse(probWin.window.end_utc);
+    when = nowMs >= ws && nowMs < we ? { label: "Includes now", cls: "now", title: "The current time falls inside this 24 h window." }
+      : we <= nowMs ? { label: "Past window", cls: "past", title: "A 24 h window that has already ended. It is still a forecast, not an observation." }
+      : { label: "Future", cls: "future", title: "Forecast for a window that has not started yet." };
+  } else if (isWindow && nowMs >= validMs - windowHours * HOUR && nowMs < validMs) when = { label: "Includes now", cls: "now", title: "The current time falls inside this window." };
   else if (isInterval && nowMs >= startMs && nowMs < validMs) when = { label: "Includes now", cls: "now", title: "The current time falls inside this interval." };
   else if (!isInterval && variable !== "precip" && Math.abs(validMs - nowMs) <= 1.5 * HOUR) when = { label: "≈ Now", cls: "now", title: "This step is the nearest model time to the current time." };
   else if (validMs <= nowMs) when = { label: "Past model step", cls: "past", title: "The model's value for a time that has already passed. It is a forecast value, not an observation." };
@@ -384,6 +431,12 @@ export default function App() {
                   {WINDOW_OPTIONS.filter((h) => h <= lastStep).map((h) => <option key={h} value={h}>{h} h</option>)}
                 </select></label>
             )}
+            {variable === "prob" && (
+              <label className="winsel">Rain amount{" "}
+                <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
+                  {(probMeta?.thresholds_mm ?? PROB_THRESHOLDS).map((t) => <option key={t} value={t}>at least {t} mm</option>)}
+                </select></label>
+            )}
             <button type="button" className="quick" onClick={() => nextHours(24)} title="Rain accumulated over the 24 hours from now (nearest model steps)">🌧 Rain: next 24 h</button>
             {variable === "precip" && (
               <div className="seg small" role="radiogroup" aria-label="Precipitation total">
@@ -405,6 +458,11 @@ export default function App() {
                 : kind === "interval"
                 ? <>Rain accumulated in the <strong>{durH} h</strong> from {formatTime(startIso, zone, false)} to {formatTime(validIso, zone, false)}.</>
                 : <>Rain accumulated since the run was issued ({formatTime(meta.issue_time_utc, zone)}), a <strong>{step} h</strong> total.</>)
+              : variable === "prob"
+              ? (probWin && probMeta
+                ? <>ECMWF ensemble: chance that rain reaches <strong>{threshold} mm</strong> in the <strong>24 h</strong> from {formatTime(probWin.window.start_utc, zone)} to {formatTime(probWin.window.end_utc, zone)} (ensemble run issued {formatTime(probMeta.issue_time_utc, zone)}).
+                  {!probWin.exact && <> Nearest available window to the selected time (windows end every 12 h; this one ends {Math.abs(probWin.offsetH).toFixed(1)} h {probWin.offsetH >= 0 ? "after" : "before"} it).</>}</>
+                : <>Rain probabilities are not available: {probErr ?? "loading…"}</>)
               : <>Model {vInfo.blurb} <strong>at this instant</strong> (not an accumulation or an average).</>}
             {when.cls === "past" && <> <span className="muted">Model value for a time that has passed; not an observation.</span></>}
           </p>
@@ -458,7 +516,7 @@ export default function App() {
             {notice && <p className="error" role="alert">{notice}</p>}
           </form>
           <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
-          <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} />
+          <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold} />
         </aside>
       </main>
 
@@ -469,7 +527,7 @@ export default function App() {
           <summary>What this forecast can and cannot tell you</summary>
           <ul>
             <li><strong>"Live" means the newest published model run, not a nowcast.</strong> ECMWF issues a run every 6 hours and it appears several hours later, so even the newest run starts in the past. Times before "now" are model values, not observations.</li>
-            <li>It is a <strong>single deterministic model run</strong>: no probabilities or uncertainty ranges are shown, and it can differ from later runs. The run comparison shows how much it changed, not how likely anything is.</li>
+            <li>The map, charts and totals come from a <strong>single deterministic model run</strong>: no uncertainty is attached, and it can differ from later runs. The run comparison shows how much it changed, not how likely anything is. The separate <strong>Rain chance</strong> view shows <strong>ECMWF's own ensemble probabilities</strong> (from a different, 00/12 UTC-only forecast system, so its run can be older). This project does not compute any probability.</li>
             <li>Values are grid-cell values at 0.25° (~28 km). A selected place gets the <strong>nearest cell</strong>, not an interpolated or point value. The smooth map display is visual only.</li>
             <li>Rain totals are differences of the model's cumulative precipitation. Values are stored with limited precision, so amounts below about 0.25 mm are indistinguishable from zero and cumulative values may dip very slightly between steps.</li>
             <li>Temperature, cloud and wind are instantaneous values at the valid time. Wind is the 10 m wind; arrows show where the air moves toward. Cloud cover is stored coarsely (about 1 %).</li>

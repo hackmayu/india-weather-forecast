@@ -72,3 +72,12 @@ success path (permission denied in the test browser).
 - Clean-clone deployment rehearsal (fresh venv, npm ci, build, cold start): API, frontend and snapshot seeding
   work; one first attempt showed only one of two snapshot runs seeded and could not be reproduced in two further
   cold starts (cause unknown; seeding code reviewed and unit-tested).
+
+## ECMWF probabilities added (2026-11-04 night; applicant answered "Yes, add them")
+- Decision (applicant): add official ECMWF ENS probabilities, which changes the earlier "no probabilities" position.
+  Constraint kept: no probability is computed by this project; only ECMWF's published `ep` products are shown.
+- Built: precip/ens.py (fetch+validate+process), store_ens.py, api_ens.py, refresher integration (never breaks the
+  deterministic refresh), snapshot data/snapshot/ens/, frontend Rain chance tab + per-place table, tests.
+- Verified against source GRIB (144 comparisons) and against the deterministic run (see DATA_NOTES.md).
+- Claude judgement calls for the applicant to review: thresholds 1/5/10/25/50/100 mm (20 mm skipped as close to 25);
+  integer-% display with conventional rounding; nearest-window-end mapping from the 3-hourly timeline.
