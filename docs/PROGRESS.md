@@ -100,3 +100,10 @@ success path (permission denied in the test browser).
 - Changes: compact status line, plain-language rain chips, day shortcuts, place summary tiles first, auto-scroll on phones, last place
   remembered, first-visit guide, bigger touch targets, stray blank gap removed. Helpers (day shortcuts, place headline, rain presets) have unit tests.
 - Process note: one browser navigation of mine overwrote the applicant's open GitHub tab; it was restored to github.com/hackmayu and later tests used a separate tab.
+
+## Git history rewrite to remove Claude from the contributors list (2026-11-04)
+- Request (applicant): "in contributors please remove claude"; Claude first stopped adding the co-author line to new commits and
+  asked before touching existing history, listing the consequences; applicant answered "Yes, rewrite it".
+- Done: only the Claude co-author line was removed from 21 commit messages; all 22 trees, authors, dates and subjects verified
+  identical; force-pushed with a lease. Old-to-new commit IDs are in `docs/history-rewrite-map.md` so the session log can be matched.
+- The assistance disclosure in README.md and this file is unchanged.
