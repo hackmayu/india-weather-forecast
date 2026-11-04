@@ -41,6 +41,18 @@ forecast produced by this project.
 
 ## Usability features
 
+**Designed for a first-time visitor** (changes made after watching the app used end to end):
+- **Map first, one-line status.** The seven technical status chips (issue time, published time, next run, last check, ...)
+  are folded into one line ("Forecast from ... - 10 h old") with a Details toggle.
+- **Plain-language rain choices:** *Next 24 h*, *Next 48 h*, *Every 3 h*, *Total so far* instead of interval/window/cumulative.
+- **Day shortcuts** under the map (Now, Today, Tomorrow, Fri 6, ...) plus Play, step buttons and the slider; an exact-time list stays available.
+- **Place summary first:** big tiles (rain in the next 24 h, temperature range, strongest wind), then charts and tables.
+  On a phone, tapping the map scrolls to this summary and a "Back to the map" link returns; on desktop it sits beside the map.
+- **Remembers your last place** on this device and shows a friendly "pick a place" start screen with four one-tap cities.
+- **First-visit guide** (3 steps, dismissible, reopenable from "How to use"); icons on the weather tabs; larger touch targets on touch devices.
+
+**More:**
+
 - **India overview:** a short deterministic summary for the next 24 h (heaviest rain cell and nearest listed city, share of
   the mapped area reaching 1 and 10 mm, strongest wind). The mapped area includes sea.
 - **Installable:** web app manifest and icon ("Add to home screen"); there is deliberately no offline cache, so data is never stale from a cache.
@@ -275,7 +287,7 @@ Observed during development (2026-11-04), not aspirational:
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 69 unit tests (including 25 parity tests of the browser data engine against the real API) (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
+- **Frontend:** 75 unit tests (including 25 parity tests of the browser data engine against the real API) (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
   play/pause, variable switching, shared-link restore (variable, time, place, zone), city search, CSV content, chart hover values, 24 h table, Space/arrow shortcuts, basemap fallback (simulated unreachable basemap), no horizontal overflow.
 - **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with

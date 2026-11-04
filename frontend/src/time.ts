@@ -76,3 +76,46 @@ export function relTime(deltaMs: number): string {
   const txt = h ? `${h} h${m ? ` ${m} min` : ""}` : `${m} min`;
   return deltaMs < 0 ? `${txt} ago` : `in ${txt}`;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Day shortcuts for the timeline ("Today", "Tomorrow", "Fri 6" ...)
+// ---------------------------------------------------------------------------------------------
+export interface DayChip { key: string; label: string; index: number }
+
+function localParts(ms: number, zone: Zone) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: zone === "utc" ? "UTC" : undefined, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const g = (t: string) => parts.find((p) => p.type === t)!.value;
+  return { date: `${g("year")}-${g("month")}-${g("day")}`, hour: Number(g("hour")) };
+}
+/** Calendar date (YYYY-MM-DD) of a timestamp in the chosen zone; used to highlight the active day chip. */
+export const localDate = (ms: number, zone: Zone): string => localParts(ms, zone).date;
+
+/**
+ * One chip per calendar day (in the chosen zone) that the forecast covers. Each chip jumps to the model step
+ * closest to local noon of that day; "Today" jumps to the step nearest to now. Days whose nearest step is more
+ * than 6 h from noon (e.g. a last day with only a midnight step) are skipped, as are steps before `minIndex`.
+ */
+export function dayShortcuts(valid: string[], nowMs: number, zone: Zone, minIndex = 0): DayChip[] {
+  const times = valid.map((v) => Date.parse(v));
+  const byDate = new Map<string, { index: number; off: number }>();
+  times.forEach((t, i) => {
+    if (i < minIndex) return;
+    const { date, hour } = localParts(t, zone);
+    const off = Math.abs(hour - 12);
+    const cur = byDate.get(date);
+    if (!cur || off < cur.off) byDate.set(date, { index: i, off });
+  });
+  const today = localDate(nowMs, zone), tomorrow = localDate(nowMs + 24 * 3_600_000, zone);
+  const label = new Intl.DateTimeFormat("en-GB", { timeZone: zone === "utc" ? "UTC" : undefined, weekday: "short", day: "numeric" });
+  const chips: DayChip[] = [];
+  for (const [date, { index, off }] of byDate) {
+    if (off > 6 && date !== today) continue;
+    if (date === today) {
+      const n = Math.max(minIndex, nearestIndex(valid, nowMs));
+      chips.push({ key: date, label: "Today", index: n });
+    } else chips.push({ key: date, label: date === tomorrow ? "Tomorrow" : label.format(new Date(times[index])), index });
+  }
+  return chips;
+}

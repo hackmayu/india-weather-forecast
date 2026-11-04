@@ -9,7 +9,8 @@ import MapView, { type Basemap, type Hover } from "./MapView";
 import Timeline from "./Timeline";
 import { CITIES, findCity } from "./cities";
 import { nearestWindow } from "./prob";
-import { formatTime, fracIndex, indexForNow, nearestIndex, nextRun, relTime, zoneName, type Zone } from "./time";
+import { rainPreset } from "./blocks";
+import { dayShortcuts, formatTime, fracIndex, indexForNow, localDate, nearestIndex, nextRun, relTime, zoneName, type Zone } from "./time";
 import { buildSearch, parseUrl } from "./urlState";
 
 const PRESETS = [
@@ -17,12 +18,12 @@ const PRESETS = [
   { name: "Kolkata", lat: 22.57, lon: 88.36 }, { name: "Chennai", lat: 13.08, lon: 80.27 },
   { name: "Bengaluru", lat: 12.97, lon: 77.59 }, { name: "Guwahati", lat: 26.14, lon: 91.74 },
 ];
-const VARIABLES: { id: VariableId; label: string; blurb: string }[] = [
-  { id: "precip", label: "Rain", blurb: "precipitation" },
-  { id: "temp", label: "Temperature", blurb: "2 m air temperature" },
-  { id: "cloud", label: "Cloud", blurb: "total cloud cover" },
-  { id: "prob", label: "Rain chance", blurb: "chance (ECMWF ensemble probability) that 24 h rain reaches the chosen amount" },
-  { id: "wind", label: "Wind", blurb: "10 m wind (speed colours, arrows show where the air moves toward)" },
+const VARIABLES: { id: VariableId; label: string; icon: string; blurb: string }[] = [
+  { id: "precip", label: "Rain", icon: "🌧", blurb: "precipitation" },
+  { id: "temp", label: "Temperature", icon: "🌡", blurb: "2 m air temperature" },
+  { id: "cloud", label: "Cloud", icon: "☁", blurb: "total cloud cover" },
+  { id: "prob", label: "Rain chance", icon: "☂", blurb: "chance (ECMWF ensemble probability) that 24 h rain reaches the chosen amount" },
+  { id: "wind", label: "Wind", icon: "💨", blurb: "10 m wind (speed colours, arrows show where the air moves toward)" },
 ];
 const PLAY_MS = 900;
 const WINDOW_OPTIONS = [6, 12, 24, 48, 72];
@@ -60,6 +61,8 @@ export default function App() {
   const [zone, setZone] = useState<Zone>(urlInit.z ?? "local");
   const [copied, setCopied] = useState(false);
   const [cityIn, setCityIn] = useState("");
+  const [guide, setGuide] = useState(lsGet("guide", "") !== "seen");
+  const dismissGuide = () => { setGuide(false); lsSet("guide", "seen"); };
   const [playing, setPlaying] = useState(false);
   const [palette, setPalette] = useState<Palette>(lsGet("palette", "radar") as Palette);
   const [smooth, setSmooth] = useState(lsGet("smooth", "1") === "1");
@@ -156,7 +159,14 @@ export default function App() {
         const n = indexForNow(meta.valid_times_utc, Date.now(), true);
         if (n.state === "within") setIndex(n.index);
       }
-      if (urlInit.lat !== undefined && urlInit.lon !== undefined) choosePoint(urlInit.lat, urlInit.lon);
+      if (urlInit.lat !== undefined && urlInit.lon !== undefined) choosePoint(urlInit.lat, urlInit.lon, false);
+      else {
+        // No place in the link: reopen the place used last time on this device (if any).
+        try {
+          const last = JSON.parse(lsGet("lastPlace", "null")) as { lat: number; lon: number } | null;
+          if (last && Number.isFinite(last.lat) && Number.isFinite(last.lon)) choosePoint(last.lat, last.lon, false);
+        } catch { /* ignore a corrupt value */ }
+      }
     } else if (selValid.current != null) {
       setIndex(nearestIndex(meta.valid_times_utc, selValid.current));
     }
@@ -249,19 +259,24 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [playing, meta, minIndex]);
 
-  const choosePoint = useCallback((lat: number, lon: number) => {
+  const choosePoint = useCallback((lat: number, lon: number, scroll = true) => {
     if (!meta) return;
     setNotice(null); setPointErr(null); setPointLoading(true);
+    // On a phone the results sit below the map: bring them into view so the tap visibly does something.
+    if (scroll && typeof matchMedia === "function" && matchMedia("(max-width: 860px)").matches) {
+      const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.setTimeout(() => document.getElementById("place-results")?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" }), 120);
+    }
     const la = Number(lat.toFixed(4)), lo = Number(lon.toFixed(4));
     fetchPoint(meta.run_id, la, lo)
-      .then((p) => { setPoint(p); setLoc({ lat: la, lon: lo }); setLatIn(p.requested.lat.toFixed(2)); setLonIn(p.requested.lon.toFixed(2)); })
+      .then((p) => { setPoint(p); setLoc({ lat: la, lon: lo }); lsSet("lastPlace", JSON.stringify({ lat: la, lon: lo })); setLatIn(p.requested.lat.toFixed(2)); setLonIn(p.requested.lon.toFixed(2)); })
       .catch((e: Error) => { setPointErr(e.message); setPoint(null); })
       .finally(() => setPointLoading(false));
   }, [meta]);
 
   // After a run switch, refresh the selected place from the new run.
   useEffect(() => {
-    if (meta && loc && point && point.run_id !== meta.run_id) choosePoint(loc.lat, loc.lon);
+    if (meta && loc && point && point.run_id !== meta.run_id) choosePoint(loc.lat, loc.lon, false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.run_id]);
 
@@ -364,6 +379,10 @@ export default function App() {
   else if (!isInterval && variable !== "precip" && Math.abs(validMs - nowMs) <= 1.5 * HOUR) when = { label: "≈ Now", cls: "now", title: "This step is the nearest model time to the current time." };
   else if (validMs <= nowMs) when = { label: "Past model step", cls: "past", title: "The model's value for a time that has already passed. It is a forecast value, not an observation." };
   else when = { label: "Future", cls: "future", title: "Forecast for a time that has not happened yet." };
+  const days = dayShortcuts(meta.valid_times_utc, nowMs, zone, minIndex);
+  const activeDay = localDate(validMs, zone);
+  const preset = rainPreset(kind, windowHours);
+  const backToMap = () => document.querySelector(".mapwrap")?.scrollIntoView({ behavior: "smooth", block: "start" });
   const lastCheckMs = status?.last_attempt_utc ? Date.parse(status.last_attempt_utc) : null;
   const live = !!status?.auto_refresh;
   const isStatic = status?.mode === "static";
@@ -372,9 +391,9 @@ export default function App() {
     <div className="app">
       <a className="skip" href="#locations">Skip map, go to location chooser</a>
       <header>
-        <div>
-          <h1>India Weather Forecast Explorer</h1>
-          <p className="muted">ECMWF IFS HRES (0.25°) deterministic forecast · rain, temperature, cloud and wind</p>
+        <div className="brand">
+          <h1>India Weather Forecast</h1>
+          <p className="muted">Rain, temperature, cloud and wind for the coming days. Tap the map to pick a place.</p>
         </div>
         <div className="hdr-tools">
           <button type="button" className="link" onClick={() => setZone(zone === "local" ? "utc" : "local")} aria-label={`Times are shown in ${zoneName(zone)}. Switch to ${zone === "local" ? "UTC" : "local time"}`}>
@@ -384,23 +403,41 @@ export default function App() {
           <button type="button" className="link" onClick={() => setTheme(theme === "auto" ? "dark" : theme === "dark" ? "light" : "auto")} aria-label={`Theme: ${theme}. Click to change.`}>
             ◐ Theme: {theme}
           </button>
+          <button type="button" className="link" onClick={() => setGuide(true)} aria-expanded={guide}>❓ How to use</button>
         </div>
       </header>
 
-      <section className="livebar" aria-label="Forecast status">
-        <span className={`pill ${status?.refreshing ? "busy" : live ? "live" : "idle"}`} title={isStatic ? (live ? "Static site: a scheduled job republishes it when ECMWF releases a new run (checked about every 30 minutes); this page notices new data automatically." : "Static snapshot: the data does not change until the site is rebuilt.")
-          : live ? "This server checks ECMWF for new model runs every 10 minutes." : "This server is not checking for new runs automatically."}>
-          <span className="dot" aria-hidden="true" />{status?.refreshing ? "Checking for a new run…" : live ? (isStatic ? "Auto-published" : "Live updates on") : (isStatic ? "Static snapshot" : "Static data")}
-        </span>
-        <span className="chip"><b>Run issued</b> {formatTime(meta.issue_time_utc, zone)}</span>
-        {pubMs && <span className="chip" title="Time the run became available on the ECMWF server (Last-Modified header)."><b>Published</b> {formatTime(meta.published_at_utc!, zone, false)}{meta.availability_delay_h != null && ` (+${meta.availability_delay_h.toFixed(1)} h)`}</span>}
-        <span className={`chip ${stale ? "bad" : "good"}`}><b>Data age</b> {relTime(-ageMs).replace(" ago", "")}{stale ? " · STALE" : ""}</span>
-        <span className="chip" title={`Typical delay after issue time, measured from the last 9 runs: about 7.6 h for 00/12 UTC runs and 6.5 h for 06/18 UTC runs. Not guaranteed.`}>
-          <b>Next run</b> {nr.overdue ? `expected ${relTime(nr.expectedMs - nowMs)} — later than usual` : `≈ ${formatTime(new Date(nr.expectedMs).toISOString(), zone, false)} (${relTime(nr.expectedMs - nowMs)})`}
-        </span>
-        {lastCheckMs && <span className="chip" title={isStatic ? "When the site files were generated." : undefined}><b>{isStatic ? "Site built" : "Last check"}</b> {relTime(lastCheckMs - nowMs)}</span>}
-        <label className="chip auto"><input type="checkbox" checked={autoUpdate} onChange={(e) => setAutoUpdate(e.target.checked)} /> Auto-switch to new runs</label>
-      </section>
+      {guide && (
+        <section className="guide" aria-label="How to use this page">
+          <strong>New here?</strong>
+          <ol>
+            <li><b>Pick a place:</b> tap the map or search a city.</li>
+            <li><b>Pick a time:</b> use the day buttons or the slider under the map (<b>Now</b> jumps to the present).</li>
+            <li><b>Pick what to see:</b> Rain, Temperature, Cloud, Wind or the chance of rain.</li>
+          </ol>
+          <p className="muted small">Everything shown is a computer-model forecast (ECMWF), not an observation or a warning.</p>
+          <button type="button" className="primary" onClick={dismissGuide}>Got it</button>
+        </section>
+      )}
+
+      <details className="statusline">
+        <summary>
+          <span className={`pill ${status?.refreshing ? "busy" : live ? "live" : "idle"}`} title={isStatic ? (live ? "Static site: a scheduled job republishes it when ECMWF releases a new run (checked about every 30 minutes); this page notices new data automatically." : "Static snapshot: the data does not change until the site is rebuilt.")
+            : live ? "This server checks ECMWF for new model runs every 10 minutes." : "This server is not checking for new runs automatically."}>
+            <span className="dot" aria-hidden="true" />{status?.refreshing ? "Checking for a new run…" : live ? (isStatic ? "Auto-published" : "Live updates on") : (isStatic ? "Static snapshot" : "Static data")}
+          </span>
+          <span className={`s-text ${stale ? "bad" : ""}`}>Forecast from {formatTime(meta.issue_time_utc, zone)} · {relTime(-ageMs).replace(" ago", "")} old{stale ? " · OUT OF DATE" : ""}</span>
+          <span className="s-more">Details</span>
+        </summary>
+        <div className="livebar" aria-label="Forecast status details">
+          {pubMs && <span className="chip" title="Time the run became available on the ECMWF server (Last-Modified header)."><b>Published</b> {formatTime(meta.published_at_utc!, zone, false)}{meta.availability_delay_h != null && ` (+${meta.availability_delay_h.toFixed(1)} h)`}</span>}
+          <span className="chip" title={`Typical delay after issue time, measured from the last 9 runs: about 7.6 h for 00/12 UTC runs and 6.5 h for 06/18 UTC runs. Not guaranteed.`}>
+            <b>Next run</b> {nr.overdue ? `expected ${relTime(nr.expectedMs - nowMs)} — later than usual` : `≈ ${formatTime(new Date(nr.expectedMs).toISOString(), zone, false)} (${relTime(nr.expectedMs - nowMs)})`}
+          </span>
+          {lastCheckMs && <span className="chip" title={isStatic ? "When the site files were generated." : undefined}><b>{isStatic ? "Site built" : "Last check"}</b> {relTime(lastCheckMs - nowMs)}</span>}
+          <label className="chip auto"><input type="checkbox" checked={autoUpdate} onChange={(e) => setAutoUpdate(e.target.checked)} /> Switch to new forecasts automatically</label>
+        </div>
+      </details>
 
       {stale && (
         <p className="banner" role="status">
@@ -422,53 +459,54 @@ export default function App() {
       <main>
         <div className="left">
           <div className="controls">
-            <div className="seg" role="radiogroup" aria-label="Weather variable">
+            <div className="seg" role="radiogroup" aria-label="What to show">
               {VARIABLES.map((v) => (
                 <label key={v.id} className={variable === v.id ? "on" : ""}>
                   <input type="radio" name="variable" checked={variable === v.id} onChange={() => setVariable(v.id)} />
-                  {v.label}
+                  <span aria-hidden="true">{v.icon}</span> {v.label}
                 </label>
               ))}
             </div>
-            {variable === "precip" && kind === "window" && (
-              <label className="winsel">Window{" "}
-                <select value={windowHours} onChange={(e) => setWindowHours(Number(e.target.value))}>
-                  {WINDOW_OPTIONS.filter((h) => h <= lastStep).map((h) => <option key={h} value={h}>{h} h</option>)}
-                </select></label>
+            {variable === "precip" && (
+              <div className="chips-row" role="group" aria-label="Which rain figure to show">
+                <button type="button" className={`chipbtn ${preset === "next24" ? "on" : ""}`} aria-pressed={preset === "next24"} onClick={() => nextHours(24)}
+                  title="Rain accumulated over the 24 hours from now">Next 24 h</button>
+                <button type="button" className={`chipbtn ${preset === "next48" ? "on" : ""}`} aria-pressed={preset === "next48"} onClick={() => nextHours(48)} disabled={lastStep < 48}
+                  title="Rain accumulated over the 48 hours from now">Next 48 h</button>
+                <button type="button" className={`chipbtn ${preset === "steps" ? "on" : ""}`} aria-pressed={preset === "steps"} onClick={() => setKind("interval")}
+                  title="Rain in each 3-hour step; move the time to see it change">Every 3 h</button>
+                <button type="button" className={`chipbtn ${preset === "total" ? "on" : ""}`} aria-pressed={preset === "total"} onClick={() => setKind("cumulative")}
+                  title="Rain added up since the forecast started">Total so far</button>
+                {preset === "custom" && (
+                  <label className="winsel">Window{" "}
+                    <select value={windowHours} onChange={(e) => setWindowHours(Number(e.target.value))}>
+                      {WINDOW_OPTIONS.filter((h) => h <= lastStep).map((h) => <option key={h} value={h}>{h} h</option>)}
+                    </select></label>
+                )}
+              </div>
             )}
             {variable === "prob" && (
-              <label className="winsel">Rain amount{" "}
+              <label className="winsel">Chance of at least{" "}
                 <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
-                  {(probMeta?.thresholds_mm ?? PROB_THRESHOLDS).map((t) => <option key={t} value={t}>at least {t} mm</option>)}
+                  {(probMeta?.thresholds_mm ?? PROB_THRESHOLDS).map((x) => <option key={x} value={x}>{x} mm of rain</option>)}
                 </select></label>
-            )}
-            <button type="button" className="quick" onClick={() => nextHours(24)} title="Rain accumulated over the 24 hours from now (nearest model steps)">🌧 Rain: next 24 h</button>
-            {variable === "precip" && (
-              <div className="seg small" role="radiogroup" aria-label="Precipitation total">
-                {(["interval", "window", "cumulative"] as Kind[]).map((k) => (
-                  <label key={k} className={kind === k ? "on" : ""}>
-                    <input type="radio" name="kind" checked={kind === k} onChange={() => setKind(k)} />
-                    {k === "interval" ? "Interval total" : k === "window" ? "Window total" : "Cumulative"}
-                  </label>
-                ))}
-              </div>
             )}
           </div>
           <p className="readout" aria-live="polite">
             <span className={`when ${when.cls}`} title={when.title}>{when.label}</span>{" "}
-            <strong>Valid {formatTime(validIso, zone)}</strong> (+{step} h).{" "}
             {variable === "precip"
               ? (kind === "window"
-                ? <>Rain accumulated over the <strong>{windowHours} h</strong> from {formatTime(meta.valid_times_utc[Math.max(0, meta.steps_h.indexOf(step - windowHours))], zone)} to {formatTime(validIso, zone)}.</>
+                ? <><strong>{windowHours} hours of rain</strong>, {formatTime(meta.valid_times_utc[Math.max(0, meta.steps_h.indexOf(step - windowHours))], zone)} → {formatTime(validIso, zone)}.</>
                 : kind === "interval"
-                ? <>Rain accumulated in the <strong>{durH} h</strong> from {formatTime(startIso, zone, false)} to {formatTime(validIso, zone, false)}.</>
-                : <>Rain accumulated since the run was issued ({formatTime(meta.issue_time_utc, zone)}), a <strong>{step} h</strong> total.</>)
+                ? <><strong>Rain in {durH} hours</strong>, {formatTime(startIso, zone, false)} → {formatTime(validIso, zone)}.</>
+                : <><strong>Total rain so far</strong> (since {formatTime(meta.issue_time_utc, zone)}), up to {formatTime(validIso, zone)}.</>)
               : variable === "prob"
               ? (probWin && probMeta
-                ? <>ECMWF ensemble: chance that rain reaches <strong>{threshold} mm</strong> in the <strong>24 h</strong> from {formatTime(probWin.window.start_utc, zone)} to {formatTime(probWin.window.end_utc, zone)} (ensemble run issued {formatTime(probMeta.issue_time_utc, zone)}).
+                ? <>ECMWF ensemble: chance that rain reaches <strong>{threshold} mm</strong> in the <strong>24 hours</strong> from {formatTime(probWin.window.start_utc, zone)} to {formatTime(probWin.window.end_utc, zone)} (ensemble run issued {formatTime(probMeta.issue_time_utc, zone)}).
                   {!probWin.exact && <> Nearest available window to the selected time (windows end every 12 h; this one ends {Math.abs(probWin.offsetH).toFixed(1)} h {probWin.offsetH >= 0 ? "after" : "before"} it).</>}</>
                 : <>Rain probabilities are not available: {probErr ?? "loading…"}</>)
-              : <>Model {vInfo.blurb} <strong>at this instant</strong> (not an accumulation or an average).</>}
+              : <><strong>{vInfo.label} at {formatTime(validIso, zone)}</strong> <span className="muted">(the model's value at that moment)</span>.</>}
+            {" "}<span className="muted">+{step} h.</span>
             {when.cls === "past" && <> <span className="muted">Model value for a time that has passed; not an observation.</span></>}
           </p>
           <div className="mapwrap">
@@ -494,13 +532,13 @@ export default function App() {
             )}
           </div>
           <Timeline meta={meta} index={safeIndex} minIndex={minIndex} zone={zone} playing={playing} onIndex={setIndex} onPlaying={setPlaying}
-            onNow={() => setIndex(nowInfo.index)} nowFrac={nowFrac} nowState={nowInfo.state} />
+            onNow={() => setIndex(Math.max(minIndex, nowInfo.index))} nowFrac={nowFrac} nowState={nowInfo.state} days={days} activeDay={activeDay} />
         </div>
 
         <aside className="right">
           <form className="locform" id="locations" tabIndex={-1} onSubmit={(e) => { e.preventDefault(); const la = Number(latIn), lo = Number(lonIn); if (latIn.trim() === "" || lonIn.trim() === "" || !isFinite(la) || !isFinite(lo)) { setNotice("Enter numeric latitude and longitude."); return; } choosePoint(la, lo); }}>
             <fieldset>
-              <legend>Choose a location</legend>
+              <legend>Choose a place</legend>
               <div className="citysearch">
                 <label>Search a city
                   <input list="city-list" value={cityIn} placeholder="e.g. Pune" autoComplete="off"
@@ -512,17 +550,23 @@ export default function App() {
               <div className="presets">
                 {PRESETS.map((p) => <button type="button" key={p.name} onClick={() => choosePoint(p.lat, p.lon)}>{p.name}</button>)}
               </div>
-              <div className="coords">
-                <label>Latitude °N<input inputMode="decimal" value={latIn} onChange={(e) => setLatIn(e.target.value)} placeholder="e.g. 19.08" /></label>
-                <label>Longitude °E<input inputMode="decimal" value={lonIn} onChange={(e) => setLonIn(e.target.value)} placeholder="e.g. 72.88" /></label>
-                <button type="submit">Show</button>
-              </div>
+              <details className="coords-details">
+                <summary>Enter coordinates</summary>
+                <div className="coords">
+                  <label>Latitude °N<input inputMode="decimal" value={latIn} onChange={(e) => setLatIn(e.target.value)} placeholder="e.g. 19.08" /></label>
+                  <label>Longitude °E<input inputMode="decimal" value={lonIn} onChange={(e) => setLonIn(e.target.value)} placeholder="e.g. 72.88" /></label>
+                  <button type="submit">Show</button>
+                </div>
+              </details>
             </fieldset>
             {notice && <p className="error" role="alert">{notice}</p>}
           </form>
+          <div id="place-results">
+            <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold}
+              nowMs={nowMs} onBack={backToMap} onPickPreset={choosePoint} />
+          </div>
           <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
           <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
-          <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold} />
         </aside>
       </main>
 

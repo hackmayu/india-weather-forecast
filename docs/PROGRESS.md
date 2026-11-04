@@ -93,3 +93,10 @@ success path (permission denied in the test browser).
   steps replayed against a local bare repo. NOT verified: an actual Vercel deploy and an actual GitHub Actions run.
 - Bug found by tests during this work: publisher crashed when no ENS run was available (fixed, tested).
 - New features: India overview card, installable manifest/icon.
+
+## Easier-to-use / nicer UI round (2026-11-04 night; applicant: "make the interface more easy to use" and "more good ui")
+- Claude's diagnosis (from watching the app used): technical status chips crowded the top, the map sat far down, rain options
+  used jargon, the place results were hidden below other cards (and off-screen on phones), there was no guidance for a new visitor.
+- Changes: compact status line, plain-language rain chips, day shortcuts, place summary tiles first, auto-scroll on phones, last place
+  remembered, first-visit guide, bigger touch targets, stray blank gap removed. Helpers (day shortcuts, place headline, rain presets) have unit tests.
+- Process note: one browser navigation of mine overwrote the applicant's open GitHub tab; it was restored to github.com/hackmayu and later tests used a separate tab.

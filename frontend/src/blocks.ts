@@ -35,3 +35,37 @@ export function dailyBlocks(series: SeriesPoint[]): Block[] {
   }
   return blocks;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Headline numbers for one place: the next 24 h from now (model steps nearest to now)
+// ---------------------------------------------------------------------------------------------
+export interface Headline { hours: number; startIdx: number; endIdx: number; rainMm: number; tMin?: number; tMax?: number; windMax?: number }
+
+/**
+ * Rain (exact cumulative difference, floored at 0 for packing noise), temperature range and strongest wind for the
+ * window from the step nearest to `nowMs` to 24 h later (shorter at the end of the run). Null when under 6 h remain.
+ */
+export function placeHeadline(series: SeriesPoint[], nowMs: number): Headline | null {
+  let i0 = 0;
+  series.forEach((s, i) => { if (Math.abs(Date.parse(s.valid_time_utc) - nowMs) < Math.abs(Date.parse(series[i0].valid_time_utc) - nowMs)) i0 = i; });
+  let i1 = series.findIndex((s) => s.step_h === series[i0].step_h + 24);
+  if (i1 < 0) i1 = series.length - 1;
+  const hours = series[i1].step_h - series[i0].step_h;
+  if (hours < 6) return null;
+  const win = series.slice(i0, i1 + 1);
+  const temps = win.map((s) => s.temp_c).filter((v): v is number => v != null);
+  const winds = win.map((s) => s.wind_speed_ms).filter((v): v is number => v != null);
+  return {
+    hours, startIdx: i0, endIdx: i1, rainMm: Math.max(0, series[i1].cumulative_mm - series[i0].cumulative_mm),
+    tMin: temps.length ? Math.min(...temps) : undefined, tMax: temps.length ? Math.max(...temps) : undefined,
+    windMax: winds.length ? Math.max(...winds) : undefined,
+  };
+}
+
+/** Plain-language rain view chosen by the user. */
+export type RainPreset = "next24" | "next48" | "steps" | "total" | "custom";
+export function rainPreset(kind: "interval" | "cumulative" | "window", hours: number): RainPreset {
+  if (kind === "interval") return "steps";
+  if (kind === "cumulative") return "total";
+  return hours === 24 ? "next24" : hours === 48 ? "next48" : "custom";
+}

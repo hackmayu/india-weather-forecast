@@ -128,3 +128,55 @@ describe("India overview", () => {
     expect(nearCity(0, 0)).toBeNull();
   });
 });
+
+import { localDate, dayShortcuts } from "./time";
+import { placeHeadline, rainPreset } from "./blocks";
+
+describe("day shortcuts", () => {
+  // 3-hourly valid times from 2026-11-04 06:00Z to 2026-11-07 00:00Z
+  const valid: string[] = [];
+  for (let t = Date.UTC(2026, 10, 4, 6); t <= Date.UTC(2026, 10, 7, 0); t += 3 * 3.6e6) valid.push(new Date(t).toISOString().replace(".000", ""));
+  const now = Date.UTC(2026, 10, 4, 20, 10);
+  it("one chip per day: Today jumps to now, others to the step nearest noon, a lone midnight step is skipped", () => {
+    const chips = dayShortcuts(valid, now, "utc");
+    expect(chips.map((c) => c.label)).toEqual(["Today", "Tomorrow", "Fri 6"]);
+    expect(valid[chips[0].index]).toBe("2026-11-04T21:00:00Z");       // nearest step to 20:10
+    expect(valid[chips[1].index]).toBe("2026-11-05T12:00:00Z");
+    expect(valid[chips[2].index]).toBe("2026-11-06T12:00:00Z");
+  });
+  it("respects the first selectable step", () => {
+    const chips = dayShortcuts(valid, now, "utc", valid.indexOf("2026-11-05T09:00:00Z"));
+    expect(chips.every((c) => c.index >= valid.indexOf("2026-11-05T09:00:00Z"))).toBe(true);
+  });
+  it("localDate follows the zone", () => {
+    const t = Date.UTC(2026, 10, 4, 20, 0);                           // 20:00 UTC is already the 5th in India (+5:30)
+    expect(localDate(t, "utc")).toBe("2026-11-04");
+  });
+});
+
+describe("place headline", () => {
+  const mk = (cum: number[], temps: number[], winds: number[]) => cum.map((c, i) => ({ step_h: i * 6, valid_time_utc: new Date(Date.UTC(2026, 10, 4, i * 6)).toISOString().replace(".000", ""),
+    cumulative_mm: c, interval_mm: null, interval_hours: null, temp_c: temps[i], wind_speed_ms: winds[i] }));
+  it("rain, temperature range and wind for the 24 h from the step nearest now", () => {
+    const s = mk([0, 1, 3, 9, 12, 30], [20, 22, 25, 30, 28, 24], [1, 2, 3, 4, 5, 6]);
+    const h = placeHeadline(s, Date.UTC(2026, 10, 4, 6, 30))!;          // nearest step = index 1 (06:00)
+    expect(h.startIdx).toBe(1);
+    expect(h.endIdx).toBe(5);
+    expect(h.hours).toBe(24);
+    expect(h.rainMm).toBe(29);
+    expect([h.tMin, h.tMax, h.windMax]).toEqual([22, 30, 6]);
+  });
+  it("is null when under 6 h of forecast remain", () => {
+    expect(placeHeadline(mk([0, 1, 2], [1, 1, 1], [1, 1, 1]), Date.UTC(2026, 10, 4, 12))).toBeNull();
+  });
+});
+
+describe("rain presets", () => {
+  it("maps kind and window length to plain-language choices", () => {
+    expect(rainPreset("window", 24)).toBe("next24");
+    expect(rainPreset("window", 48)).toBe("next48");
+    expect(rainPreset("window", 12)).toBe("custom");
+    expect(rainPreset("interval", 24)).toBe("steps");
+    expect(rainPreset("cumulative", 24)).toBe("total");
+  });
+});

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { PointResp, ProbMeta, ProbPointResp, RunMeta } from "./api";
-import { dailyBlocks } from "./blocks";
+import { dailyBlocks, placeHeadline } from "./blocks";
+import { nearCity } from "./Overview";
 import { colorAt, getScale } from "./colors";
 import { textOn } from "./prob";
 import { csvFilename, toCsv } from "./csv";
@@ -21,6 +22,9 @@ interface Props {
   probMeta: ProbMeta | null;
   selectedWindowEnd: number | null; // end hour of the probability window shown on the map
   threshold: number;
+  nowMs: number;
+  onBack: () => void; // phone layout: scroll back up to the map
+  onPickPreset: (lat: number, lon: number) => void;
 }
 
 const W = 520, PAD = { l: 44, r: 10, t: 8, b: 22 };
@@ -85,18 +89,28 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
   );
 }
 
-export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev, prob, probMeta, selectedWindowEnd, threshold }: Props) {
-  if (error) return <section className="panel" aria-live="polite"><h2>Selected location</h2><p className="error" role="alert">{error}</p></section>;
-  if (loading && !point) return <section className="panel" aria-busy="true"><h2>Selected location</h2><p>Loading location forecast…</p></section>;
+export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev, prob, probMeta, selectedWindowEnd, threshold, nowMs, onBack, onPickPreset }: Props) {
+  if (error) return <section className="panel" aria-live="polite"><h2>Your place</h2><p className="error" role="alert">{error}</p></section>;
+  if (loading && !point) return <section className="panel" aria-busy="true"><h2>Your place</h2><p className="skeleton">Loading the forecast for this place…</p></section>;
   if (!point) return (
-    <section className="panel"><h2>Selected location</h2>
-      <p>Click the map, or choose a place below, to see its forecast for the nearest 0.25° grid cell.</p></section>
+    <section className="panel empty">
+      <h2>Pick a place to see its forecast</h2>
+      <p>Tap anywhere on the map, search a city, or try one of these:</p>
+      <div className="presets">
+        {[["Mumbai", 19.08, 72.88], ["Delhi", 28.61, 77.21], ["Chennai", 13.08, 80.27], ["Kolkata", 22.57, 88.36]].map(([n, la, lo]) => (
+          <button type="button" key={n as string} onClick={() => onPickPreset(la as number, lo as number)}>{n as string}</button>
+        ))}
+      </div>
+    </section>
   );
   const s = point.series;
   const story = buildStory(s);
   const facts = buildFacts(s);
   const hasInstant = s[0].temp_c != null;
   const cmp = prev ? compareRuns(point, prev.point) : null;
+  const head = placeHeadline(s, nowMs);
+  const city = nearCity(point.grid_point.lat, point.grid_point.lon, 0.5);
+  const placeName = city ? `${city.name} area` : `${point.grid_point.lat.toFixed(2)}°N, ${point.grid_point.lon.toFixed(2)}°E`;
   const blocks = dailyBlocks(s);
   const download = () => {
     const blob = new Blob([toCsv(point, meta, new Date().toISOString())], { type: "text/csv;charset=utf-8" });
@@ -110,11 +124,25 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
   const t0 = (iso: string) => formatTime(iso, zone);
   return (
     <section className="panel" aria-live="polite" aria-busy={loading}>
-      <h2>Selected location</h2>
-      <p className="muted">
-        Requested {point.requested.lat.toFixed(2)}°N, {point.requested.lon.toFixed(2)}°E → grid cell centre{" "}
-        <strong>{point.grid_point.lat.toFixed(2)}°N, {point.grid_point.lon.toFixed(2)}°E</strong>. {point.method}
-      </p>
+      <div className="place-head">
+        <h2>{placeName}</h2>
+        <button type="button" className="link backtomap" onClick={onBack}>↑ Back to the map</button>
+      </div>
+      {head && (
+        <div className="tiles" role="group" aria-label={`Next ${head.hours} hours at this place`}>
+          <div className="tile rain"><span className="tile-k">Rain, next {head.hours} h</span>
+            <span className="tile-v">{head.rainMm < 0.05 ? "<0.1" : head.rainMm.toFixed(1)}<small> mm</small></span></div>
+          {head.tMin != null && head.tMax != null && (
+            <div className="tile temp"><span className="tile-k">Temperature</span>
+              <span className="tile-v">{head.tMin.toFixed(0)}–{head.tMax.toFixed(0)}<small> °C</small></span></div>
+          )}
+          {head.windMax != null && (
+            <div className="tile wind"><span className="tile-k">Strongest wind</span>
+              <span className="tile-v">{head.windMax.toFixed(1)}<small> m/s</small></span></div>
+          )}
+        </div>
+      )}
+      {head && <p className="muted small">{formatTime(s[head.startIdx].valid_time_utc, zone)} → {formatTime(s[head.endIdx].valid_time_utc, zone)} · model forecast for the nearest 0.25° cell ({point.grid_point.lat.toFixed(2)}°N, {point.grid_point.lon.toFixed(2)}°E), not an observation.</p>}
       <Chart title="Precipitation in each interval (mm per interval)" unit="mm" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
       <Chart title="Cumulative precipitation since issue time (mm)" unit="mm" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
 
