@@ -25,6 +25,7 @@ interface Props {
   nowMs: number;
   onBack: () => void; // phone layout: scroll back up to the map
   onPickPreset: (lat: number, lon: number) => void;
+  label?: string; // the name the user picked (e.g. "Wai, Maharashtra"), shown as the heading
 }
 
 const W = 520, PAD = { l: 44, r: 10, t: 8, b: 22 };
@@ -89,7 +90,7 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
   );
 }
 
-export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev, prob, probMeta, selectedWindowEnd, threshold, nowMs, onBack, onPickPreset }: Props) {
+export default function LocationPanel({ meta, point, loading, error, index, zone, onIndex, nowFrac, prev, prob, probMeta, selectedWindowEnd, threshold, nowMs, onBack, onPickPreset, label }: Props) {
   if (error) return <section className="panel" aria-live="polite"><h2>Your place</h2><p className="error" role="alert">{error}</p></section>;
   if (loading && !point) return <section className="panel" aria-busy="true"><h2>Your place</h2><p className="skeleton">Loading the forecast for this place…</p></section>;
   if (!point) return (
@@ -110,7 +111,8 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
   const cmp = prev ? compareRuns(point, prev.point) : null;
   const head = placeHeadline(s, nowMs);
   const city = nearCity(point.grid_point.lat, point.grid_point.lon, 0.5);
-  const placeName = city ? `${city.name} area` : `${point.grid_point.lat.toFixed(2)}°N, ${point.grid_point.lon.toFixed(2)}°E`;
+  const gridText = `${point.grid_point.lat.toFixed(2)}°N, ${point.grid_point.lon.toFixed(2)}°E`;
+  const placeName = label ? label : city ? `${city.name} area` : `${point.grid_point.lat.toFixed(2)}°N, ${point.grid_point.lon.toFixed(2)}°E`;
   const blocks = dailyBlocks(s);
   const download = () => {
     const blob = new Blob([toCsv(point, meta, new Date().toISOString())], { type: "text/csv;charset=utf-8" });
@@ -126,6 +128,7 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
     <section className="panel" aria-live="polite" aria-busy={loading}>
       <div className="place-head">
         <h2>{placeName}</h2>
+        {(label || city) && <p className="muted gridnote">Forecast for the nearest 0.25° cell ({gridText}), about 28 km wide.</p>}
         <button type="button" className="link backtomap" onClick={onBack}>↑ Back to the map</button>
       </div>
       {head && (

@@ -72,6 +72,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(lsGet("theme", "auto") as Theme);
   const [sysDark, setSysDark] = useState(() => typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches);
 
+  const [placeLabel, setPlaceLabel] = useState("");   // name chosen in the search box; cleared when a place is picked on the map or by coordinates
   const [mapData, setMapData] = useState<MapResp | null>(null);
   // Secondary panels (all-cities overview, previous-run comparison) download many data files; wait until the map is drawn and the page has been quiet for a moment.
   const [idle, setIdle] = useState(false);
@@ -266,8 +267,9 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [playing, meta, minIndex]);
 
-  const choosePoint = useCallback((lat: number, lon: number, scroll = true) => {
+  const choosePoint = useCallback((lat: number, lon: number, scroll = true, label = "") => {
     if (!meta) return;
+    setPlaceLabel(label);
     setNotice(null); setPointErr(null); setPointLoading(true);
     // On a phone the results sit below the map: bring them into view so the tap visibly does something.
     if (scroll && typeof matchMedia === "function" && matchMedia("(max-width: 860px)").matches) {
@@ -283,7 +285,7 @@ export default function App() {
 
   // After a run switch, refresh the selected place from the new run.
   useEffect(() => {
-    if (meta && loc && point && point.run_id !== meta.run_id) choosePoint(loc.lat, loc.lon, false);
+    if (meta && loc && point && point.run_id !== meta.run_id) choosePoint(loc.lat, loc.lon, false, placeLabel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.run_id]);
 
@@ -549,7 +551,7 @@ export default function App() {
             <fieldset>
               <legend>Choose a place</legend>
               <div className="citysearch">
-                <PlaceSearch onPick={(pl) => choosePoint(pl.lat, pl.lon)} />
+                <PlaceSearch onPick={(pl) => choosePoint(pl.lat, pl.lon, true, pl.state ? `${pl.name}, ${pl.state}` : pl.name)} />
                 <button type="button" onClick={useMyLocation} title="Uses your browser's location once; it is only used to look up the nearest forecast grid cell.">📍 Use my location</button>
               </div>
               <div className="presets">
@@ -568,7 +570,7 @@ export default function App() {
           </form>
           <div id="place-results">
             <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold}
-              nowMs={nowMs} onBack={backToMap} onPickPreset={choosePoint} />
+              nowMs={nowMs} onBack={backToMap} onPickPreset={choosePoint} label={placeLabel} />
           </div>
           {idle ? <>
             <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />

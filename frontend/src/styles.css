@@ -331,3 +331,5 @@ button, .chip, summary { touch-action: manipulation; }
 .bystate { display: grid; gap: 6px; margin-top: 8px; }
 .bystate select { width: 100%; }
 .placelist mark { background: none; color: var(--accent, #1f4fa8); text-decoration: underline; text-underline-offset: 2px; }
+.place-head { flex-wrap: wrap; }
+.gridnote { flex-basis: 100%; margin: 2px 0 6px; font-size: .82rem; }
