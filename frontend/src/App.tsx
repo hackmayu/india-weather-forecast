@@ -107,12 +107,14 @@ export default function App() {
   useEffect(() => { const id = window.setInterval(() => setNowMs(Date.now()), 30_000); return () => window.clearInterval(id); }, []);
 
   useEffect(() => {
-    // Poll the backend: its refresher checks ECMWF every 10 min; we ask it what it has every 45 s.
+    // Poll the backend: its refresher checks ECMWF every 10 min; we ask it what it has every 45 s,
+    // or every 5 s while it reports that a check is running (so "Checking…" clears promptly).
     const tick = () => fetchStatus().then(setStatus).catch(() => undefined);
     tick();
-    const id = window.setInterval(tick, 45_000);
+    const id = window.setInterval(tick, status?.refreshing ? 5_000 : 45_000);
     return () => window.clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.refreshing]);
 
   // ECMWF ENS probability run (a separate system: 00/12 UTC only). Its absence must never break the app.
   const probLatest = status?.probability?.latest_run ?? null;
