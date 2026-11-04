@@ -126,7 +126,7 @@ def point(run_id: str = RunId,
         "run_id": r.meta["run_id"],
         "requested": {"lat": lat, "lon": lon},
         "grid_point": {"lat": float(r.lats[iy]), "lon": float(r.lons[ix])},
-        "method": "nearest grid point at 0.25° (~28 km); no interpolation. "
+        "method": "Nearest grid point at 0.25° (~28 km); no interpolation. "
                   "Represents a grid-cell value, not a point measurement.",
         "units": "mm",
         "series": [{"step_h": s, "valid_time_utc": vt[i],

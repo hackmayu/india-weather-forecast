@@ -20,8 +20,10 @@ describe("rain story", () => {
     expect(s.wettestDay).toMatchObject({ startIdx: 1, endIdx: 3 });
     expect(s.wettestDay!.mm).toBeCloseTo(9);
   });
-  it("reports dry when nothing reaches 0.1 mm", () => {
+  it("reports dry/trace when no interval reaches 0.5 mm (below data precision)", () => {
     expect(buildStory(mk([0, 0.05, 0.05])).dry).toBe(true);
+    expect(buildStory(mk([0, 0.3, 0.4])).dry).toBe(true);
+    expect(buildStory(mk([0, 0.6, 0.6])).dry).toBe(false);
   });
 });
 

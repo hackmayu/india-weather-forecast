@@ -77,8 +77,9 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
       <div className="story">
         <h3>Rain story <span className="tag">calculated from this forecast</span></h3>
         {story.dry ? (
-          <p>This run forecasts no more than 0.1 mm in any interval at this grid cell through +{s[s.length - 1].step_h} h
-            (total {story.total.toFixed(1)} mm). Amounts this small are within the precision of the data.</p>
+          <p>This run forecasts essentially no rain at this grid cell through +{s[s.length - 1].step_h} h: no interval reaches
+            0.5 mm (cumulative value {story.total.toFixed(1)} mm). Amounts this small are comparable to the precision of the
+            stored data, so small wiggles in the cumulative line are not meaningful.</p>
         ) : (
           <ul>
             <li>Total over the {s[s.length - 1].step_h} h horizon: <strong>{story.total.toFixed(1)} mm</strong>.</li>

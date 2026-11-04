@@ -31,6 +31,8 @@ export function buildStory(series: SeriesPoint[]): Story {
     const mm = series[j].cumulative_mm - series[i].cumulative_mm;
     if (mm > (wettestDay?.mm ?? 0)) wettestDay = { startIdx: i, endIdx: j, mm };
   }
-  const dry = !wettest || wettest.mm < 0.1;
+  // Below 0.5 mm per interval the amounts are comparable to the data's packing precision
+  // (~0.25 mm; docs/DATA_NOTES.md), so we call the cell "trace/dry" rather than report them as rain.
+  const dry = !wettest || wettest.mm < 0.5;
   return { wettest: dry ? undefined : wettest, wettestDay: dry ? undefined : wettestDay, first, total, dry };
 }

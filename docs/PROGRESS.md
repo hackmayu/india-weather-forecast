@@ -24,6 +24,6 @@ at the applicant's direction; decisions are recorded below with who made them.
 - [x] ECMWF docs + live server checked (see `DATA_NOTES.md`)
 - [x] M1: real tp series fetched (49 steps, 23.6 MB) and interpreted
 - [x] M2: processing + minimal backend (26 tests pass; wet-cell values match source GRIB)
-- [ ] M3: map, timeline, location view
+- [x] M3: map, timeline, location view (checked in browser at desktop and 375px mobile: map, click select, outside-domain message, play/pause; keyboard & screen-reader pass still TODO)
 - [ ] M4: usability + scientific explanations
 - [ ] M5: verify, deploy, document
