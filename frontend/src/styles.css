@@ -319,3 +319,11 @@ button, .chip, summary { touch-action: manipulation; }
 .placelist li { padding: 9px 10px; border-radius: 8px; cursor: pointer; }
 .placelist li.on { background: var(--accent-soft, #e3f0ff); }
 .placelist li.muted { cursor: default; }
+
+/* v9 clarity: keep the legend small (full notes on hover/focus, always available to screen readers) */
+@media (min-width: 561px) {
+  .mapwrap .legend { width: min(60%, 340px); }
+  .mapwrap .legend:not(:hover):not(:focus-within) .legend-note { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
+}
+.locform legend { padding: 0 6px; background: var(--card); }
+.placesearch label { display: block; margin-top: 6px; }
