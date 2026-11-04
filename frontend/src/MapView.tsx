@@ -114,7 +114,7 @@ export default function MapView(props: Props) {
       container: box.current,
       // ?offline simulates an unreachable hosted basemap (used to test the fallback path).
       style: location.search.includes("offline") ? "https://offline.invalid/style.json" : styleUrl(latest.current.basemap, latest.current.dark),
-      bounds: [[d.lon_min - 2, d.lat_min - 2], [d.lon_max + 2, d.lat_max + 2]],
+      bounds: [[d.lon_min - 0.5, d.lat_min - 0.5], [d.lon_max + 0.5, d.lat_max + 0.5]],
       maxBounds: [[d.lon_min - 25, d.lat_min - 20], [d.lon_max + 25, d.lat_max + 20]],
       attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
     });
