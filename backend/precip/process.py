@@ -28,7 +28,7 @@ import eccodes as ec
 import numpy as np
 
 from . import config
-from .fetch import Run, fetch_run, find_latest_complete_run, raw_path
+from .fetch import Run, fetch_run, find_latest_complete_run, published_at, raw_path
 
 log = logging.getLogger("precip.process")
 
@@ -225,12 +225,14 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
 
     issue = run.issue_time
     steps = run.steps
+    pub = published_at(run)  # best effort; None when the server gives no Last-Modified
     meta = {
         "run_id": run.run_id,
         "model": "ECMWF IFS HRES (oper/fc)",
         "resolution_deg": 0.25,
         "source": config.BASE_URL,
         "issue_time_utc": issue.isoformat().replace("+00:00", "Z"),
+        "published_at_utc": pub.isoformat(timespec="seconds").replace("+00:00", "Z") if pub else None,
         "processed_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "variable": "tp (total precipitation)",
         "source_units": "m (converted x1000 to mm)",

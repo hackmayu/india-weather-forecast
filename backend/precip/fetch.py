@@ -95,6 +95,19 @@ def tp_record(run: Run, step: int) -> dict | None:
     return None if recs is None else recs["tp"]
 
 
+def published_at(run: Run) -> datetime | None:
+    """When the run became available on the server: `Last-Modified` of its final step file.
+    Observed 2026-11-02..04 (9 runs): 00/12 UTC runs appear ~7.6 h after issue, 06/18 UTC ~6.5 h,
+    and the first and last step files carry the same timestamp. Best effort: None if unavailable."""
+    from email.utils import parsedate_to_datetime
+    try:
+        r = requests.head(_url(run, run.max_step, "grib2"), timeout=config.HTTP_TIMEOUT_S)
+        lm = r.headers.get("Last-Modified")
+        return parsedate_to_datetime(lm).astimezone(timezone.utc) if r.ok and lm else None
+    except (requests.RequestException, TypeError, ValueError):
+        return None
+
+
 def run_is_complete(run: Run) -> bool:
     """A run is usable when the index of its final step exists (steps publish in order)."""
     return tp_record(run, run.max_step) is not None

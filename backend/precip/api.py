@@ -90,7 +90,12 @@ def runs() -> dict:
 def run_meta(run_id: str = RunId) -> dict:
     r = _resolve(run_id)
     meta = {k: v for k, v in r.meta.items() if k != "raw_sha256"}
-    return {**meta, "freshness": _freshness(r.meta),
+    pub = r.meta.get("published_at_utc")
+    delay = None
+    if pub:
+        issue = datetime.fromisoformat(r.meta["issue_time_utc"].replace("Z", "+00:00"))
+        delay = round((datetime.fromisoformat(pub.replace("Z", "+00:00")) - issue).total_seconds() / 3600, 2)
+    return {**meta, "availability_delay_h": delay, "freshness": _freshness(r.meta),
             "attribution": "Contains modified ECMWF Open Data (IFS), CC-BY-4.0.",
             "semantics": {"cumulative": "mm of water accumulated from the issue time to the valid time",
                           "interval": "mm accumulated between the previous and the selected valid time "

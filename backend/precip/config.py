@@ -14,7 +14,7 @@ SNAPSHOT_DIR = PROJECT_ROOT / "data" / "snapshot"
 
 # Background refresh (deployment). Off by default so tests and local dev make no network calls.
 AUTO_REFRESH = os.environ.get("PRECIP_AUTO_REFRESH", "0") == "1"
-REFRESH_INTERVAL_S = int(os.environ.get("PRECIP_REFRESH_INTERVAL_S", "1800"))
+REFRESH_INTERVAL_S = int(os.environ.get("PRECIP_REFRESH_INTERVAL_S", "600"))
 KEEP_RAW = os.environ.get("PRECIP_KEEP_RAW", "1") == "1"  # deployment sets 0 to save ephemeral disk
 
 # Source: ECMWF Open Data, real-time IFS HRES ("oper"), 0.25 degree.
