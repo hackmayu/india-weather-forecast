@@ -1,4 +1,4 @@
-"""Scientific processing: GRIB `tp` messages -> regional, interval-aware arrays.
+"""Scientific processing: GRIB messages -> regional, interval-aware arrays.
 
 Key scientific decisions (see docs/DATA_NOTES.md for the evidence):
   * IFS `tp` is cumulative since forecast start (stepType=accum, stepRange=0-N), in metres.
@@ -9,6 +9,9 @@ Key scientific decisions (see docs/DATA_NOTES.md for the evidence):
     A difference of two fields can therefore be negative by up to (q_prev+q_cur)/2 even
     though true accumulation never decreases. Such negatives are set to 0 and COUNTED;
     larger negatives indicate a possible accumulation reset or a misread field and raise.
+  * 2t, tcc, 10u, 10v are INSTANTANEOUS (stepType=instant): valid at the step time, never
+    differenced. Units: K -> degC, fraction (0-1) -> %, m/s kept. Values outside physically
+    plausible ranges raise instead of being displayed.
 """
 from __future__ import annotations
 
@@ -32,10 +35,19 @@ log = logging.getLogger("precip.process")
 # Multiplier from GRIB units to millimetres of water (1 mm == 1 kg m-2).
 _UNIT_TO_MM = {"m": 1000.0, "kg m**-2": 1.0}
 
+# Instantaneous variables: param -> (GRIB units accepted -> (scale, offset)), output unit, plausible range.
+# value_out = value_native * scale + offset
+_INSTANT = {
+    "2t": {"units": {"K": (1.0, -273.15)}, "out": "degC", "range": (-90.0, 60.0)},
+    "tcc": {"units": {"(0 - 1)": (100.0, 0.0)}, "out": "%", "range": (0.0, 100.0)},
+    "10u": {"units": {"m s**-1": (1.0, 0.0)}, "out": "m/s", "range": (-120.0, 120.0)},
+    "10v": {"units": {"m s**-1": (1.0, 0.0)}, "out": "m/s", "range": (-120.0, 120.0)},
+}
+
 
 @dataclass
-class TpField:
-    """One decoded tp message on its native grid (lat descending, lon in file order)."""
+class Field:
+    """One decoded message on its native grid (lat descending, lon in file order)."""
     values_native: np.ndarray  # shape (nlat, nlon), native units
     units: str
     step: int
@@ -46,7 +58,10 @@ class TpField:
     data_time: int
 
 
-def read_tp(path: Path) -> TpField:
+TpField = Field  # backwards-compatible name
+
+
+def read_field(path: Path, short_name: str, step_type: str) -> Field:
     """Decode one message and verify it is what we think it is."""
     with open(path, "rb") as fh:
         if ec.codes_count_in_file(fh) != 1:
@@ -55,11 +70,13 @@ def read_tp(path: Path) -> TpField:
         g = ec.codes_grib_new_from_file(fh)
         try:
             get = lambda k: ec.codes_get(g, k)  # noqa: E731
-            if get("shortName") != "tp":
-                raise ValueError(f"{path}: not tp (got {get('shortName')})")
-            if get("stepType") != "accum" or get("startStep") != 0:
+            if get("shortName") != short_name:
+                raise ValueError(f"{path}: not {short_name} (got {get('shortName')})")
+            if get("stepType") != step_type:
+                raise ValueError(f"{path}: {short_name} stepType is {get('stepType')}, expected {step_type}")
+            if step_type == "accum" and get("startStep") != 0:
                 raise ValueError(f"{path}: tp is not accumulated from forecast start "
-                                 f"(stepType={get('stepType')}, startStep={get('startStep')})")
+                                 f"(startStep={get('startStep')})")
             if get("gridType") != "regular_ll":
                 raise ValueError(f"{path}: unsupported grid {get('gridType')}")
             if get("bitmapPresent"):
@@ -72,7 +89,7 @@ def read_tp(path: Path) -> TpField:
             vals = ec.codes_get_values(g).reshape(nj, ni).astype(np.float64)
             if not np.all(np.isfinite(vals)):
                 raise ValueError(f"{path}: non-finite values")
-            return TpField(
+            return Field(
                 values_native=vals,
                 units=get("units"),
                 step=int(get("endStep")),
@@ -86,11 +103,32 @@ def read_tp(path: Path) -> TpField:
             ec.codes_release(g)
 
 
+def read_tp(path: Path) -> Field:
+    return read_field(path, "tp", "accum")
+
+
 def unit_factor_to_mm(units: str) -> float:
     try:
         return _UNIT_TO_MM[units]
     except KeyError:
         raise ValueError(f"unknown tp units {units!r}; refusing to guess a conversion") from None
+
+
+def convert_instant(param: str, units: str, values: np.ndarray) -> np.ndarray:
+    """Convert an instantaneous field to display units and reject implausible values."""
+    spec = _INSTANT[param]
+    try:
+        scale, offset = spec["units"][units]
+    except KeyError:
+        raise ValueError(f"unknown {param} units {units!r}; refusing to guess a conversion") from None
+    out = values * scale + offset
+    lo, hi = spec["range"]
+    # tcc is stored with only 7 bits, so allow a hair of packing overshoot before declaring it bad.
+    slack = 1.0 if param == "tcc" else 0.0
+    if out.min() < lo - slack or out.max() > hi + slack:
+        raise ValueError(f"{param}: values {out.min():.2f}..{out.max():.2f} {spec['out']} outside the "
+                         f"plausible range {lo}..{hi}; wrong units or corrupt field")
+    return np.clip(out, lo, hi) if param == "tcc" else out
 
 
 def crop_region(values: np.ndarray, lats: np.ndarray, lons: np.ndarray):
@@ -138,15 +176,34 @@ def intervals_from_cumulative(cum_mm: np.ndarray, steps: list[int], quanta_mm: l
                             "worst_packing_noise_mm": round(worst_noise, 5)}
 
 
+def _check_field(f: Field, run: Run, step: int, label: str) -> None:
+    if f.step != step:
+        raise ValueError(f"{label}: step mismatch: file for {step} says {f.step}")
+    if (f.data_date, f.data_time) != (run.date, run.hour * 100):
+        raise ValueError(f"{label}: issue time mismatch at step {step}: {f.data_date} {f.data_time}")
+
+
+def _load_instant(run: Run, param: str):
+    """All steps of one instantaneous param -> (nsteps, nlat, nlon) in display units + grid."""
+    cube, lats, lons = [], None, None
+    units_seen = set()
+    for s in run.steps:
+        f = read_field(raw_path(run, s, param), param, "instant")
+        _check_field(f, run, s, param)
+        units_seen.add(f.units)
+        reg, lats, lons = crop_region(convert_instant(param, f.units, f.values_native), f.lats, f.lons)
+        cube.append(reg)
+    if len(units_seen) != 1:
+        raise ValueError(f"{param}: mixed units across steps: {units_seen}")
+    return np.stack(cube).astype(np.float32), lats, lons
+
+
 def process_run(run: Run, out_root: Path | None = None) -> Path:
-    """Process all downloaded tp messages of `run` into data/processed/<run_id>/."""
+    """Process all downloaded messages of `run` into data/processed/<run_id>/."""
     out_root = out_root or config.PROCESSED_DIR
     fields = [read_tp(raw_path(run, s)) for s in run.steps]
     for f, s in zip(fields, run.steps):
-        if f.step != s:
-            raise ValueError(f"step mismatch: file for {s} says {f.step}")
-        if (f.data_date, f.data_time) != (run.date, run.hour * 100):
-            raise ValueError(f"issue time mismatch in step {s}: {f.data_date} {f.data_time}")
+        _check_field(f, run, s, "tp")
     units = {f.units for f in fields}
     if len(units) != 1:
         raise ValueError(f"mixed units across steps: {units}")
@@ -158,8 +215,13 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
         cum.append(reg)
         quanta.append(f.quantum_native * factor)
     cum_mm = np.stack(cum).astype(np.float32)
-    intervals, durations, stats = intervals_from_cumulative(
-        np.stack(cum), run.steps, quanta)
+    intervals, durations, stats = intervals_from_cumulative(np.stack(cum), run.steps, quanta)
+
+    temp_c, _, _ = _load_instant(run, "2t")
+    cloud_pct, _, _ = _load_instant(run, "tcc")
+    u10, _, _ = _load_instant(run, "10u")
+    v10, _, _ = _load_instant(run, "10v")
+    speed = np.hypot(u10, v10)
 
     issue = run.issue_time
     steps = run.steps
@@ -172,6 +234,12 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
         "processed_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "variable": "tp (total precipitation)",
         "source_units": "m (converted x1000 to mm)",
+        "variables": {
+            "precip": "tp, accumulated since issue time (mm of water); intervals are differences",
+            "temp": "2t, instantaneous 2 m temperature (degC, converted from K)",
+            "cloud": "tcc, instantaneous total cloud cover (%, converted from fraction)",
+            "wind": "10u/10v, instantaneous 10 m wind (m/s); speed = hypot(u, v)",
+        },
         "steps_h": steps,
         "valid_times_utc": [(issue + timedelta(hours=s)).isoformat().replace("+00:00", "Z") for s in steps],
         "interval_durations_h": durations.tolist(),
@@ -181,7 +249,11 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
         "quality": stats,
         "max_cumulative_mm": round(float(cum_mm.max()), 2),
         "max_interval_mm": round(float(intervals.max()), 2),
-        "raw_sha256": {str(s): hashlib.sha256(raw_path(run, s).read_bytes()).hexdigest() for s in steps},
+        "ranges": {"temp_c": [round(float(temp_c.min()), 1), round(float(temp_c.max()), 1)],
+                   "cloud_pct": [round(float(cloud_pct.min()), 1), round(float(cloud_pct.max()), 1)],
+                   "wind_speed_ms": [0.0, round(float(speed.max()), 1)]},
+        "raw_sha256": {f"{p}_{s}": hashlib.sha256(raw_path(run, s, p).read_bytes()).hexdigest()
+                       for s in steps for p in config.PARAMS},
     }
     final = out_root / run.run_id
     tmp = out_root / f".{run.run_id}.tmp"
@@ -189,7 +261,8 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
     np.savez_compressed(tmp / "arrays.npz", lats=lats.astype(np.float32), lons=lons.astype(np.float32),
-                        cumulative_mm=cum_mm, interval_mm=intervals.astype(np.float32))
+                        cumulative_mm=cum_mm, interval_mm=intervals.astype(np.float32),
+                        temp_c=temp_c, cloud_pct=cloud_pct, u10=u10, v10=v10)
     (tmp / "meta.json").write_text(json.dumps(meta, indent=1))
     if final.exists():
         shutil.rmtree(final)

@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from contextlib import asynccontextmanager
 
 from . import config, refresh, store
+from .derive import wind_from_direction_deg
 
 # Forecasts are issued every 6 h and appear on the server a few hours later. A run older than
 # this has missed at least two newer issue times, so we label it stale (a UI hint, not a verdict).
@@ -103,26 +104,48 @@ def times(run_id: str = RunId) -> dict:
         for i, (s, t) in enumerate(zip(steps, m["valid_times_utc"]))]}
 
 
-@app.get("/api/runs/{run_id}/map", summary="Regional precipitation grid for one valid time")
+Variable = Literal["precip", "temp", "cloud", "wind"]
+_INSTANT_UNITS = {"temp": "°C", "cloud": "%", "wind": "m/s"}
+
+
+def _instant_field(r: store.RunData, variable: str) -> np.ndarray:
+    arr = {"temp": r.temp_c, "cloud": r.cloud_pct,
+           "wind": None if r.u10 is None else np.hypot(r.u10, r.v10)}[variable]
+    if arr is None:
+        raise HTTPException(404, f"Variable '{variable}' is not available in run {r.meta['run_id']} "
+                                 "(processed before it was added).")
+    return arr
+
+
+@app.get("/api/runs/{run_id}/map", summary="Regional grid for one valid time")
 def map_data(run_id: str = RunId,
              step: int = Query(..., ge=0, le=config.MAX_STEP_H, description="Forecast step in hours"),
-             kind: Literal["interval", "cumulative"] = "interval") -> dict:
+             variable: Variable = Query("precip", description="precip (mm), temp (°C), cloud (%), wind (m/s)"),
+             kind: Literal["interval", "cumulative"] = Query(
+                 "interval", description="Only for variable=precip: interval total or cumulative since issue")) -> dict:
     r = _resolve(run_id)
     steps = r.meta["steps_h"]
     if step not in steps:
         raise HTTPException(422, f"step {step} is not a forecast step of this run; valid: {steps}")
     i = steps.index(step)
-    if kind == "interval":
-        if i == 0:
-            raise HTTPException(422, "step 0 has no interval total; use kind=cumulative or step >= 3")
-        grid = r.interval_mm[i - 1]
-        dur = r.meta["interval_durations_h"][i - 1]
-    else:
-        grid, dur = r.cumulative_mm[i], step
-    return {"run_id": r.meta["run_id"], "step_h": step, "kind": kind,
-            "valid_time_utc": r.meta["valid_times_utc"][i], "accumulation_hours": dur, "units": "mm",
-            "lats": [round(float(x), 4) for x in r.lats], "lons": [round(float(x), 4) for x in r.lons],
-            "values": np.round(grid, 1).tolist()}  # 0.1 mm precision; row 0 is the northern edge
+    out = {"run_id": r.meta["run_id"], "step_h": step, "variable": variable,
+           "valid_time_utc": r.meta["valid_times_utc"][i],
+           "lats": [round(float(x), 4) for x in r.lats], "lons": [round(float(x), 4) for x in r.lons]}
+    if variable == "precip":
+        if kind == "interval":
+            if i == 0:
+                raise HTTPException(422, "step 0 has no interval total; use kind=cumulative or step >= 3")
+            grid, dur = r.interval_mm[i - 1], r.meta["interval_durations_h"][i - 1]
+        else:
+            grid, dur = r.cumulative_mm[i], step
+        return {**out, "kind": kind, "accumulation_hours": dur, "units": "mm",
+                "values": np.round(grid, 1).tolist()}  # 0.1 mm precision; row 0 is the northern edge
+    grid = _instant_field(r, variable)[i]
+    res = {**out, "kind": "instant", "accumulation_hours": 0, "units": _INSTANT_UNITS[variable],
+           "values": np.round(grid, 0 if variable == "cloud" else 1).tolist()}
+    if variable == "wind":  # components let the client draw direction arrows (no extra derivation)
+        res["u"], res["v"] = np.round(r.u10[i], 1).tolist(), np.round(r.v10[i], 1).tolist()
+    return res
 
 
 @app.get("/api/runs/{run_id}/point", summary="Time series at the nearest grid point")
@@ -137,6 +160,19 @@ def point(run_id: str = RunId,
                                  f"({d['lat_min']}–{d['lat_max']}°N, {d['lon_min']}–{d['lon_max']}°E).")
     iy, ix = store.nearest_cell(r, lat, lon)
     steps, vt = r.meta["steps_h"], r.meta["valid_times_utc"]
+    have_instant = r.temp_c is not None and r.u10 is not None
+    series = []
+    for i, s in enumerate(steps):
+        row = {"step_h": s, "valid_time_utc": vt[i],
+               "cumulative_mm": round(float(r.cumulative_mm[i, iy, ix]), 2),
+               "interval_mm": None if i == 0 else round(float(r.interval_mm[i - 1, iy, ix]), 2),
+               "interval_hours": None if i == 0 else r.meta["interval_durations_h"][i - 1]}
+        if have_instant:
+            u, v = float(r.u10[i, iy, ix]), float(r.v10[i, iy, ix])
+            row.update(temp_c=round(float(r.temp_c[i, iy, ix]), 1), cloud_pct=round(float(r.cloud_pct[i, iy, ix])),
+                       wind_speed_ms=round(float(np.hypot(u, v)), 1),
+                       wind_from_deg=round(float(wind_from_direction_deg(u, v))) % 360)
+        series.append(row)
     return {
         "run_id": r.meta["run_id"],
         "requested": {"lat": lat, "lon": lon},
@@ -144,11 +180,7 @@ def point(run_id: str = RunId,
         "method": "Nearest grid point at 0.25° (~28 km); no interpolation. "
                   "Represents a grid-cell value, not a point measurement.",
         "units": "mm",
-        "series": [{"step_h": s, "valid_time_utc": vt[i],
-                    "cumulative_mm": round(float(r.cumulative_mm[i, iy, ix]), 2),
-                    "interval_mm": None if i == 0 else round(float(r.interval_mm[i - 1, iy, ix]), 2),
-                    "interval_hours": None if i == 0 else r.meta["interval_durations_h"][i - 1]}
-                   for i, s in enumerate(steps)],
+        "series": series,
     }
 
 

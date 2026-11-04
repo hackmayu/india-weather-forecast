@@ -20,7 +20,11 @@ def client(tmp_path, monkeypatch):
     lons = np.array([66.0, 66.25, 66.5, 66.75], dtype=np.float32)
     cum = np.zeros((3, 3, 4), dtype=np.float32); cum[1] = 2.0; cum[2] = 5.0; cum[2, 1, 2] = 9.0
     inter = np.diff(cum, axis=0)
-    np.savez_compressed(d / "arrays.npz", lats=lats, lons=lons, cumulative_mm=cum, interval_mm=inter)
+    temp = np.full((3, 3, 4), 25.0, dtype=np.float32); temp[2] = 30.0
+    cloud = np.full((3, 3, 4), 40.0, dtype=np.float32)
+    u10 = np.full((3, 3, 4), 4.0, dtype=np.float32); v10 = np.full((3, 3, 4), 3.0, dtype=np.float32)  # 5 m/s from 233 deg
+    np.savez_compressed(d / "arrays.npz", lats=lats, lons=lons, cumulative_mm=cum, interval_mm=inter,
+                        temp_c=temp, cloud_pct=cloud, u10=u10, v10=v10)
     meta = {"run_id": "2026010100", "model": "SYNTHETIC", "issue_time_utc": "2026-01-01T00:00:00Z",
             "steps_h": steps, "interval_durations_h": [3, 3],
             "valid_times_utc": ["2026-01-01T00:00:00Z", "2026-01-01T03:00:00Z", "2026-01-01T06:00:00Z"],
@@ -80,3 +84,18 @@ def test_point_nearest_and_bounds(client):
     assert "no interpolation" in p["method"]
     for bad in ("lat=50&lon=66.5", "lat=37.8&lon=10", "lat=nan&lon=66.5", "lat=x&lon=66.5"):
         assert client.get(f"/api/runs/latest/point?{bad}").status_code == 422
+
+
+def test_instant_variables_in_map_endpoint(client):
+    t = client.get("/api/runs/latest/map?step=6&variable=temp").json()
+    assert t["units"] == "°C" and t["kind"] == "instant" and t["values"][0][0] == 30.0
+    assert client.get("/api/runs/latest/map?step=0&variable=cloud").json()["values"][0][0] == 40.0  # step 0 is valid
+    w = client.get("/api/runs/latest/map?step=3&variable=wind").json()
+    assert w["units"] == "m/s" and w["values"][0][0] == 5.0 and w["u"][0][0] == 4.0 and w["v"][0][0] == 3.0
+    assert client.get("/api/runs/latest/map?step=3&variable=snow").status_code == 422
+
+
+def test_point_includes_instant_fields_with_meteorological_wind_direction(client):
+    s = client.get("/api/runs/latest/point?lat=37.8&lon=66.6").json()["series"][1]
+    assert s["temp_c"] == 25.0 and s["cloud_pct"] == 40 and s["wind_speed_ms"] == 5.0
+    assert s["wind_from_deg"] == 233      # u=4 (to the east), v=3 (to the north) => FROM south-west

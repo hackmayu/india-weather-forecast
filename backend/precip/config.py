@@ -25,6 +25,9 @@ RESOL = "0p25"
 STREAM = "oper"
 TYPE = "fc"
 
+# Surface parameters fetched per step. tp is cumulative (accum); the others are instantaneous.
+PARAMS = ("tp", "2t", "tcc", "10u", "10v")
+
 # Region: India (approximate bounding box). Decision approved by applicant 2026-11-04.
 LAT_MIN, LAT_MAX = 6.0, 38.0
 LON_MIN, LON_MAX = 66.0, 100.0

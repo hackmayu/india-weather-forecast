@@ -64,3 +64,24 @@ def test_wettest_cell_matches_source_grib():
     assert max(s["interval_mm"] or 0 for s in series) > 10  # genuinely a wet cell
     for s in series[::6]:
         assert s["cumulative_mm"] == pytest.approx(_source_cum_mm(run, s["step_h"], lat, lon), abs=0.01)
+
+
+def test_instant_variables_match_source_grib():
+    """2t, tcc, 10u/10v re-read from the raw GRIB with eccodes' own nearest-point search."""
+    rid = ids[0]
+    if store.load_run(rid).temp_c is None:
+        pytest.skip("run processed before instantaneous variables were added")
+    run = Run(rid[:8], int(rid[8:]))
+    lat, lon = 26.25, 91.75
+    series = TestClient(api.app).get(f"/api/runs/{rid}/point?lat={lat}&lon={lon}").json()["series"]
+    def raw(param, step):
+        with open(raw_path(run, step, param), "rb") as fh:
+            g = ec.codes_grib_new_from_file(fh)
+            val = ec.codes_grib_find_nearest(g, lat, lon)[0].value
+            ec.codes_release(g)
+        return val
+    for s in series[::8]:
+        st = s["step_h"]
+        assert s["temp_c"] == pytest.approx(raw("2t", st) - 273.15, abs=0.06)
+        assert s["cloud_pct"] == pytest.approx(raw("tcc", st) * 100, abs=0.6)
+        assert s["wind_speed_ms"] == pytest.approx((raw("10u", st) ** 2 + raw("10v", st) ** 2) ** 0.5, abs=0.06)

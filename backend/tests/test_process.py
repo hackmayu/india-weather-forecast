@@ -53,3 +53,33 @@ def test_crop_sorts_wrapped_longitudes_before_cropping():
     assert np.all(np.diff(lon_o) > 0)                  # ascending
     assert np.array_equal(reg[0], lon_o)               # values still match their longitude
     assert lat_o[0] == config.LAT_MAX and lat_o[-1] == config.LAT_MIN
+
+
+# ---- instantaneous variables (SYNTHETIC inputs) ----
+from precip.derive import wind_from_direction_deg
+from precip.process import convert_instant
+
+
+def test_kelvin_to_celsius_and_cloud_fraction_to_percent():
+    assert convert_instant("2t", "K", np.array([273.15, 300.0])).tolist() == pytest.approx([0.0, 26.85])
+    assert convert_instant("tcc", "(0 - 1)", np.array([0.0, 0.5, 1.0])).tolist() == [0.0, 50.0, 100.0]
+
+
+def test_implausible_or_unknown_units_are_rejected_not_displayed():
+    with pytest.raises(ValueError, match="plausible"):
+        convert_instant("2t", "K", np.array([20.0]))        # looks like degC mislabelled as K
+    with pytest.raises(ValueError, match="refusing to guess"):
+        convert_instant("2t", "degC", np.array([20.0]))
+    with pytest.raises(ValueError, match="plausible"):
+        convert_instant("tcc", "(0 - 1)", np.array([50.0]))  # already in percent
+
+
+@pytest.mark.parametrize("u,v,expected", [
+    (5, 0, 270),    # westerly: blows toward east, comes FROM the west
+    (-5, 0, 90),    # easterly
+    (0, -5, 0),     # northerly: comes FROM the north
+    (0, 5, 180),    # southerly
+    (3, 3, 225),    # south-westerly
+])
+def test_wind_from_direction_is_meteorological(u, v, expected):
+    assert float(wind_from_direction_deg(u, v)) == pytest.approx(expected)

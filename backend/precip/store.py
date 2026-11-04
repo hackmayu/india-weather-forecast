@@ -21,6 +21,11 @@ class RunData:
     lons: np.ndarray            # ascending
     cumulative_mm: np.ndarray   # (nsteps, nlat, nlon), cumulative since issue time
     interval_mm: np.ndarray     # (nsteps-1, nlat, nlon), interval i spans steps[i] -> steps[i+1]
+    # Instantaneous fields (valid at each step time). None for runs processed before they existed.
+    temp_c: np.ndarray | None = None      # 2 m temperature, degC
+    cloud_pct: np.ndarray | None = None   # total cloud cover, %
+    u10: np.ndarray | None = None         # 10 m wind components, m/s (u east, v north)
+    v10: np.ndarray | None = None
 
 
 def processed_dir() -> Path:
@@ -44,7 +49,8 @@ def load_meta(run_id: str) -> dict:
 def _load(run_id: str, mtime: float) -> RunData:  # mtime in the key invalidates the cache on refresh
     base = processed_dir() / run_id
     with np.load(base / "arrays.npz") as z:
-        return RunData(load_meta(run_id), z["lats"], z["lons"], z["cumulative_mm"], z["interval_mm"])
+        opt = {k: (z[k] if k in z.files else None) for k in ("temp_c", "cloud_pct", "u10", "v10")}
+        return RunData(load_meta(run_id), z["lats"], z["lons"], z["cumulative_mm"], z["interval_mm"], **opt)
 
 
 def load_run(run_id: str) -> RunData:

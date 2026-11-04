@@ -73,17 +73,26 @@ def _get(url: str, headers: dict | None = None, retries: int = 4) -> requests.Re
     raise RuntimeError(f"giving up on {url}: {last}")
 
 
-def tp_record(run: Run, step: int) -> dict | None:
-    """Return the index record for `tp` at `step`, or None if the step is not (yet) published."""
+def index_records(run: Run, step: int, params: tuple[str, ...] = config.PARAMS) -> dict[str, dict] | None:
+    """One `.index` request per step -> {param: record} for the wanted surface fields, or None if
+    the step is not (yet) published. Exactly one surface record per parameter is required."""
     r = _get(_url(run, step, "index"))
     if r.status_code == 404:
         return None
     recs = [json.loads(line) for line in r.text.splitlines() if line.strip()]
-    hits = [x for x in recs if x.get("param") == "tp" and int(x.get("step", -1)) == step
-            and x.get("levtype") == "sfc"]
-    if len(hits) != 1:
-        raise RuntimeError(f"expected exactly one tp record for step {step}, got {len(hits)}")
-    return hits[0]
+    out: dict[str, dict] = {}
+    for p in params:
+        hits = [x for x in recs if x.get("param") == p and int(x.get("step", -1)) == step
+                and x.get("levtype") == "sfc"]
+        if len(hits) != 1:
+            raise RuntimeError(f"expected exactly one {p} record for step {step}, got {len(hits)}")
+        out[p] = hits[0]
+    return out
+
+
+def tp_record(run: Run, step: int) -> dict | None:
+    recs = index_records(run, step, ("tp",))
+    return None if recs is None else recs["tp"]
 
 
 def run_is_complete(run: Run) -> bool:
@@ -107,8 +116,8 @@ def find_latest_complete_run(now: datetime | None = None) -> Run:
     raise RuntimeError("no complete run found in the last 12 runs")
 
 
-def raw_path(run: Run, step: int) -> Path:
-    return config.RAW_DIR / config.MODEL / run.run_id / f"tp_{step:03d}.grib2"
+def raw_path(run: Run, step: int, param: str = "tp") -> Path:
+    return config.RAW_DIR / config.MODEL / run.run_id / f"{param}_{step:03d}.grib2"
 
 
 def _valid_grib(data: bytes, expected_len: int) -> bool:
@@ -116,18 +125,14 @@ def _valid_grib(data: bytes, expected_len: int) -> bool:
     return len(data) == expected_len and data[:4] == b"GRIB" and data[-4:] == b"7777"
 
 
-def fetch_step(run: Run, step: int) -> Path:
-    """Download one tp message (idempotent; atomic write; validates completeness)."""
-    rec = tp_record(run, step)
-    if rec is None:
-        raise FileNotFoundError(f"step {step} not published for run {run.run_id}")
+def _fetch_message(run: Run, step: int, param: str, rec: dict) -> Path:
     off, length = int(rec["_offset"]), int(rec["_length"])
-    dest = raw_path(run, step)
+    dest = raw_path(run, step, param)
     if dest.exists() and _valid_grib(dest.read_bytes(), length):
         return dest
     r = _get(_url(run, step, "grib2"), headers={"Range": f"bytes={off}-{off + length - 1}"})
     if r.status_code != 206 or not _valid_grib(r.content, length):
-        raise RuntimeError(f"incomplete/invalid tp message for step {step} "
+        raise RuntimeError(f"incomplete/invalid {param} message for step {step} "
                            f"(status {r.status_code}, {len(r.content)} of {length} bytes)")
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".part")
@@ -136,12 +141,22 @@ def fetch_step(run: Run, step: int) -> Path:
     return dest
 
 
+def fetch_step(run: Run, step: int) -> list[Path]:
+    """Download every wanted message of one step (idempotent, atomic, validated)."""
+    recs = index_records(run, step)
+    if recs is None:
+        raise FileNotFoundError(f"step {step} not published for run {run.run_id}")
+    return [_fetch_message(run, step, p, rec) for p, rec in recs.items()]
+
+
 def fetch_run(run: Run) -> list[Path]:
-    # 4 parallel requests: a sequential run took ~190 s on 2026-11-04 (2 HTTP calls per step).
-    # Kept small to stay polite to the public server; map() preserves step order and re-raises errors.
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        paths = list(pool.map(lambda s: fetch_step(run, s), run.steps))
-    log.info("run %s: %d tp messages, %.1f MB", run.run_id, len(paths),
+    # Parallel by step (6 workers). One run is ~135 MB of single-field range requests; a sequential
+    # tp-only run took ~190 s on 2026-11-04. Kept modest to stay polite to the public server;
+    # map() preserves order and re-raises the first error.
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        per_step = list(pool.map(lambda s: fetch_step(run, s), run.steps))
+    paths = [p for step_paths in per_step for p in step_paths]
+    log.info("run %s: %d messages, %.1f MB", run.run_id, len(paths),
              sum(p.stat().st_size for p in paths) / 1e6)
     return paths
 
