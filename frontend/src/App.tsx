@@ -544,6 +544,10 @@ export default function App() {
           </div>
           <Timeline meta={meta} index={safeIndex} minIndex={minIndex} zone={zone} playing={playing} onIndex={setIndex} onPlaying={setPlaying}
             onNow={() => setIndex(Math.max(minIndex, nowInfo.index))} nowFrac={nowFrac} nowState={nowInfo.state} days={days} activeDay={activeDay} />
+          {idle ? <>
+            <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
+            <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
+          </> : <div className="panel-skeleton" aria-hidden="true" />}
         </div>
 
         <aside className="right">
@@ -572,10 +576,6 @@ export default function App() {
             <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold}
               nowMs={nowMs} onBack={backToMap} onPickPreset={choosePoint} label={placeLabel} />
           </div>
-          {idle ? <>
-            <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
-            <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
-          </> : <div className="panel-skeleton" aria-hidden="true" />}
         </aside>
       </main>
 

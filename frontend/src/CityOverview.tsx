@@ -49,7 +49,7 @@ export default function CityOverview({ meta, nowMs, zone, onPick }: { meta: RunM
 
   const g = points ? buildGlance(points, meta, nowMs) : null;
   return (
-    <details className="glance panel">
+    <details className="glance panel" open>
       <summary>Cities at a glance</summary>
       {err && <p className="error" role="alert">{err}</p>}
       {!points && !err && <p aria-busy="true">Loading cities…</p>}
