@@ -1,5 +1,5 @@
 import type { PointResp, RunMeta } from "./api";
-import { buildStory } from "./rainStory";
+import { buildFacts, buildStory, compass } from "./rainStory";
 import { formatTime, type Zone } from "./time";
 
 interface Props {
@@ -14,41 +14,47 @@ interface Props {
 
 const W = 520, PAD = { l: 44, r: 10, t: 8, b: 22 };
 
-function Chart({ title, series, values, kind, index, onIndex, zone }: {
-  title: string; series: PointResp["series"]; values: (number | null)[]; kind: "bar" | "line";
-  index: number; onIndex: (i: number) => void; zone: Zone;
+function Chart({ title, unit, series, values, kind, index, onIndex, zone, color, fixedMax, autoRange }: {
+  title: string; unit: string; series: PointResp["series"]; values: (number | null)[]; kind: "bar" | "line";
+  index: number; onIndex: (i: number) => void; zone: Zone; color?: string; fixedMax?: number; autoRange?: boolean;
 }) {
   const H = 130;
   const n = series.length;
-  const maxV = Math.max(1, ...values.map((v) => v ?? 0));
+  const nums = values.map((v) => v ?? 0);
+  // Bars and accumulations start at 0. Temperature (autoRange) is not a quantity that starts at 0, so
+  // its axis fits the data (with a 1 degree margin) to keep the daily cycle visible.
+  const rawMin = autoRange ? Math.floor(Math.min(...nums) - 1) : kind === "line" ? Math.min(0, ...nums) : 0;
+  const rawMax = fixedMax ?? (autoRange ? Math.ceil(Math.max(...nums) + 1) : Math.max(1, ...nums));
+  const span = rawMax - rawMin || 1;
   const x = (i: number) => PAD.l + (i / (n - 1)) * (W - PAD.l - PAD.r);
-  const y = (v: number) => H - PAD.b - (v / maxV) * (H - PAD.b - PAD.t);
+  const y = (v: number) => H - PAD.b - ((v - rawMin) / span) * (H - PAD.b - PAD.t);
   const bw = Math.max(1.5, ((W - PAD.l - PAD.r) / (n - 1)) * 0.8);
-  const ticks = [0, maxV / 2, maxV];
+  const ticks = [rawMin, rawMin + span / 2, rawMax];
   const dayTicks = series.map((s, i) => ({ s, i })).filter(({ s }) => s.step_h % 24 === 0);
-  const peak = values.reduce<number>((b, v, i) => ((v ?? -1) > (values[b] ?? -1) ? i : b), 0);
+  const peak = values.reduce<number>((b, v, i) => ((v ?? -1e9) > (values[b] ?? -1e9) ? i : b), 0);
+  const fmt = (v: number) => (Math.abs(v) < 10 && v % 1 ? v.toFixed(1) : String(Math.round(v)));
   return (
     <figure className="chart">
       <figcaption>{title}</figcaption>
       <svg viewBox={`0 0 ${W} ${H}`} role="img"
-        aria-label={`${title}. Peak ${values[peak]?.toFixed(1)} mm at ${formatTime(series[peak].valid_time_utc, zone)}. Full numbers are in the data table below.`}
+        aria-label={`${title}. Highest ${values[peak]?.toFixed(1)} ${unit} at ${formatTime(series[peak].valid_time_utc, zone)}. Full numbers are in the data table below.`}
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           const frac = ((e.clientX - r.left) / r.width) * W;
           onIndex(Math.min(n - 1, Math.max(0, Math.round(((frac - PAD.l) / (W - PAD.l - PAD.r)) * (n - 1)))));
         }}>
-        {ticks.map((t) => (
-          <g key={t}><line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="grid" />
-            <text x={PAD.l - 5} y={y(t) + 3} textAnchor="end" className="axis">{t < 10 ? t.toFixed(1) : Math.round(t)}</text></g>
+        {ticks.map((tk, i) => (
+          <g key={i}><line x1={PAD.l} x2={W - PAD.r} y1={y(tk)} y2={y(tk)} className="grid" />
+            <text x={PAD.l - 5} y={y(tk) + 3} textAnchor="end" className="axis">{fmt(tk)}</text></g>
         ))}
         {dayTicks.map(({ s, i }) => (
           <text key={s.step_h} x={x(i)} y={H - 6} textAnchor="middle" className="axis">+{s.step_h / 24}d</text>
         ))}
         {kind === "bar"
           ? values.map((v, i) => v != null && v > 0 && <rect key={i} x={x(i) - bw / 2} y={y(v)} width={bw} height={y(0) - y(v)} className="bar" />)
-          : <polyline className="line" fill="none" points={values.map((v, i) => `${x(i)},${y(v ?? 0)}`).join(" ")} />}
+          : <polyline className="line" fill="none" style={color ? { stroke: color } : undefined} points={values.map((v, i) => `${x(i)},${y(v ?? 0)}`).join(" ")} />}
         <line x1={x(index)} x2={x(index)} y1={PAD.t} y2={H - PAD.b} className="cursor" />
-        <text x={8} y={PAD.t + 4} className="axis unit" transform={`rotate(-90 8 ${H / 2})`} textAnchor="middle">mm</text>
+        <text x={8} y={PAD.t + 4} className="axis unit" transform={`rotate(-90 8 ${H / 2})`} textAnchor="middle">{unit}</text>
       </svg>
     </figure>
   );
@@ -63,6 +69,8 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
   );
   const s = point.series;
   const story = buildStory(s);
+  const facts = buildFacts(s);
+  const hasInstant = s[0].temp_c != null;
   const t = (i: number) => formatTime(s[i].valid_time_utc, zone);
   return (
     <section className="panel" aria-live="polite" aria-busy={loading}>
@@ -71,8 +79,18 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
         Requested {point.requested.lat.toFixed(2)}°N, {point.requested.lon.toFixed(2)}°E → grid cell centre{" "}
         <strong>{point.grid_point.lat.toFixed(2)}°N, {point.grid_point.lon.toFixed(2)}°E</strong>. {point.method}
       </p>
-      <Chart title="Precipitation in each interval (mm per interval)" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} />
-      <Chart title="Cumulative precipitation since issue time (mm)" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} />
+      <Chart title="Precipitation in each interval (mm per interval)" unit="mm" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} />
+      <Chart title="Cumulative precipitation since issue time (mm)" unit="mm" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} />
+
+      {hasInstant && (
+        <details className="more-vars" open>
+          <summary>Temperature, cloud and wind at this cell</summary>
+          <Chart title="2 m temperature (°C, value at each time)" unit="°C" series={s} values={s.map((p) => p.temp_c ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} color="#d9480f" autoRange />
+          <Chart title="Total cloud cover (%, value at each time)" unit="%" series={s} values={s.map((p) => p.cloud_pct ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} color="#5b6472" fixedMax={100} />
+          <Chart title="10 m wind speed (m/s, value at each time)" unit="m/s" series={s} values={s.map((p) => p.wind_speed_ms ?? null)} kind="line" index={index} onIndex={onIndex} zone={zone} color="#0b7285" />
+          <p className="muted small">These are instantaneous model values at each valid time, not accumulations or daily means.</p>
+        </details>
+      )}
 
       <div className="story">
         <h3>Rain story <span className="tag">calculated from this forecast</span></h3>
@@ -88,6 +106,13 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
             {story.first ? <li>First interval with at least 1 mm ends {t(story.first.idx)}.</li> : <li>No interval reaches 1 mm.</li>}
           </ul>
         )}
+        {facts.tMin && facts.tMax && (
+          <ul>
+            <li>2 m temperature ranges from <strong>{facts.tMin.v.toFixed(1)} °C</strong> ({t(facts.tMin.idx)}) to <strong>{facts.tMax.v.toFixed(1)} °C</strong> ({t(facts.tMax.idx)}).</li>
+            {facts.windMax && <li>Strongest 10 m wind: <strong>{facts.windMax.v.toFixed(1)} m/s</strong> from the {compass(facts.windMax.from)} ({facts.windMax.from}°), {t(facts.windMax.idx)}.</li>}
+            {facts.cloudMean != null && <li>Average total cloud cover over the period: <strong>{Math.round(facts.cloudMean)} %</strong>.</li>}
+          </ul>
+        )}
         <p className="muted small">One deterministic model run for a 0.25° cell (~28 km). It is not an observation, probability, warning or advice.</p>
       </div>
 
@@ -95,14 +120,16 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
         <summary>Show data table</summary>
         <div className="table-wrap">
           <table>
-            <caption>Run {meta.run_id} at grid cell {point.grid_point.lat}°N, {point.grid_point.lon}°E (mm of water)</caption>
-            <thead><tr><th scope="col">Valid time</th><th scope="col">Interval (mm)</th><th scope="col">Cumulative (mm)</th></tr></thead>
+            <caption>Run {meta.run_id} at grid cell {point.grid_point.lat}°N, {point.grid_point.lon}°E (precipitation in mm of water)</caption>
+            <thead><tr><th scope="col">Valid time</th><th scope="col">Interval (mm)</th><th scope="col">Cumulative (mm)</th>
+              {hasInstant && <><th scope="col">Temp (°C)</th><th scope="col">Cloud (%)</th><th scope="col">Wind (m/s, from)</th></>}</tr></thead>
             <tbody>
               {s.map((p, i) => (
                 <tr key={p.step_h} aria-current={i === index}>
                   <th scope="row">+{p.step_h} h · {t(i)}</th>
                   <td>{p.interval_mm == null ? "–" : `${p.interval_mm.toFixed(2)} (${p.interval_hours} h)`}</td>
                   <td>{p.cumulative_mm.toFixed(2)}</td>
+                  {hasInstant && <><td>{p.temp_c?.toFixed(1)}</td><td>{p.cloud_pct}</td><td>{p.wind_speed_ms?.toFixed(1)} {p.wind_from_deg != null && compass(p.wind_from_deg)}</td></>}
                 </tr>
               ))}
             </tbody>

@@ -36,3 +36,30 @@ export function buildStory(series: SeriesPoint[]): Story {
   const dry = !wettest || wettest.mm < 0.5;
   return { wettest: dry ? undefined : wettest, wettestDay: dry ? undefined : wettestDay, first, total, dry };
 }
+
+// ---- other deterministic facts (instantaneous variables) ----
+const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+/** 16-point compass name for a bearing in degrees (the direction the wind comes FROM). */
+export function compass(deg: number): string {
+  return COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+
+export interface Facts {
+  tMin?: { idx: number; v: number }; tMax?: { idx: number; v: number };
+  windMax?: { idx: number; v: number; from: number };
+  cloudMean?: number;
+}
+
+export function buildFacts(series: SeriesPoint[]): Facts {
+  const f: Facts = {};
+  let cloudSum = 0, cloudN = 0;
+  series.forEach((s, idx) => {
+    if (s.temp_c == null) return;
+    if (!f.tMin || s.temp_c < f.tMin.v) f.tMin = { idx, v: s.temp_c };
+    if (!f.tMax || s.temp_c > f.tMax.v) f.tMax = { idx, v: s.temp_c };
+    if (s.wind_speed_ms != null && (!f.windMax || s.wind_speed_ms > f.windMax.v)) f.windMax = { idx, v: s.wind_speed_ms, from: s.wind_from_deg ?? 0 };
+    if (s.cloud_pct != null) { cloudSum += s.cloud_pct; cloudN++; }
+  });
+  if (cloudN) f.cloudMean = cloudSum / cloudN;
+  return f;
+}

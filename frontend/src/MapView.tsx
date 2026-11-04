@@ -1,105 +1,121 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
-import { feature, mesh } from "topojson-client";
-import type { Topology } from "topojson-specification";
-import countriesTopo from "world-atlas/countries-50m.json";
-import type { MapResp, RunMeta } from "./api";
-import { COLORS, classOf, hexToRgb } from "./colors";
+import type { MapResp, RunMeta, VariableId } from "./api";
+import type { Scale } from "./colors";
+import { fallbackStyle } from "./fallbackStyle";
+import { renderGrid, windArrows } from "./render";
 
-const CELL = 0.25; // source grid spacing; each value is drawn as a 0.25 deg cell (no smoothing)
-const merc = (latDeg: number) => Math.log(Math.tan(Math.PI / 4 + (latDeg * Math.PI) / 360));
+const CELL = 0.25;
+// Hosted vector basemaps from OpenFreeMap (no key, no cookies; OSM data, attribution shown on the map).
+export const BASEMAPS = {
+  light: "https://tiles.openfreemap.org/styles/positron",
+  detailed: "https://tiles.openfreemap.org/styles/liberty",
+} as const;
+export type Basemap = keyof typeof BASEMAPS;
 
-/** Paint the grid into a canvas in Web-Mercator row spacing so it lines up with the base map. */
-export function renderGrid(data: MapResp, thresholds: number[]): { url: string; coordinates: [number, number][] } {
-  const nlat = data.lats.length, nlon = data.lons.length;
-  const latTop = data.lats[0] + CELL / 2, latBot = data.lats[nlat - 1] - CELL / 2;
-  const lonL = data.lons[0] - CELL / 2, lonR = data.lons[nlon - 1] + CELL / 2;
-  const W = nlon * 4;
-  const xSpan = ((lonR - lonL) * Math.PI) / 180;
-  const ySpan = merc(latTop) - merc(latBot);
-  const H = Math.round((W * ySpan) / xSpan);
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d")!;
-  const img = ctx.createImageData(W, H);
-  const rgb = COLORS.map(hexToRgb);
-  for (let py = 0; py < H; py++) {
-    const m = merc(latTop) - ((py + 0.5) / H) * ySpan;
-    const lat = (2 * Math.atan(Math.exp(m)) - Math.PI / 2) * (180 / Math.PI);
-    const row = Math.min(nlat - 1, Math.max(0, Math.floor((data.lats[0] + CELL / 2 - lat) / CELL)));
-    for (let px = 0; px < W; px++) {
-      const col = Math.min(nlon - 1, Math.floor((px / W) * nlon));
-      const c = classOf(data.values[row][col], thresholds);
-      if (c < 0) continue;
-      const o = (py * W + px) * 4;
-      img.data[o] = rgb[c][0]; img.data[o + 1] = rgb[c][1]; img.data[o + 2] = rgb[c][2]; img.data[o + 3] = 235;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [[lonL, latTop], [lonR, latTop], [lonR, latBot], [lonL, latBot]],
-  };
-}
+type Quad = [[number, number], [number, number], [number, number], [number, number]];
+const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+const FADE_MS = 350;
+
+export interface Hover { lat: number; lon: number; value: number }
 
 interface Props {
   meta: RunMeta;
   data: MapResp | null;
-  thresholds: number[];
+  variable: VariableId;
+  scale: Scale;
+  smooth: boolean;
+  basemap: Basemap;
   marker: { lat: number; lon: number } | null;
   onPick: (lat: number, lon: number) => void;
   onOutside: (lat: number, lon: number) => void;
-  onHover: (info: { lat: number; lon: number; value: number } | null) => void;
+  onHover: (h: Hover | null) => void;
+  onBasemapFailed: () => void;
 }
 
-export default function MapView({ meta, data, thresholds, marker, onPick, onOutside, onHover }: Props) {
+export default function MapView(props: Props) {
+  const { data, scale, smooth, basemap, marker } = props;
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const mk = useRef<maplibregl.Marker | null>(null);
   const ready = useRef(false);
-  const latest = useRef({ data, thresholds, onPick, onOutside, onHover, meta });
-  latest.current = { data, thresholds, onPick, onOutside, onHover, meta };
+  const active = useRef<"A" | "B">("B");
+  const latest = useRef(props);
+  latest.current = props;
+  const firstStyle = useRef(true);
 
   const paint = () => {
-    const { data: d, thresholds: t } = latest.current;
     const m = map.current;
+    const { data: d, scale: sc, smooth: sm } = latest.current;
     if (!m || !ready.current || !d) return;
-    const { url, coordinates } = renderGrid(d, t);
-    const src = m.getSource("precip") as maplibregl.ImageSource | undefined;
-    if (src) src.updateImage({ url, coordinates: coordinates as [[number, number], [number, number], [number, number], [number, number]] });
-    else {
-      m.addSource("precip", { type: "image", url, coordinates: coordinates as [[number, number], [number, number], [number, number], [number, number]] });
-      m.addLayer({ id: "precip", type: "raster", source: "precip", paint: { "raster-resampling": "nearest", "raster-fade-duration": 0 } }, "borders");
+    const { url, coordinates } = renderGrid(d, sc, sm);
+    const next = active.current === "A" ? "B" : "A";
+    const nextSrc = m.getSource(`field${next}`) as maplibregl.ImageSource | undefined;
+    const prev = active.current;
+    if (!nextSrc) return;
+    nextSrc.updateImage({ url, coordinates: coordinates as Quad });
+    let flipped = false;
+    const flip = () => {
+      if (flipped || !map.current) return;
+      flipped = true;
+      // Cross-fade between the two image layers; this blends the DISPLAY only, no intermediate data is invented.
+      m.setPaintProperty(`field${next}`, "raster-opacity", 1);
+      m.setPaintProperty(`field${prev}`, "raster-opacity", 0);
+      active.current = next;
+    };
+    m.once("idle", flip);
+    window.setTimeout(flip, 250);
+    const wind = m.getSource("wind") as maplibregl.GeoJSONSource | undefined;
+    wind?.setData(latest.current.variable === "wind" ? windArrows(d) : { type: "FeatureCollection", features: [] });
+  };
+
+  const install = (m: maplibregl.Map) => {
+    const dm = latest.current.meta.domain;
+    const quad: Quad = [[dm.lon_min, dm.lat_max], [dm.lon_max, dm.lat_max], [dm.lon_max, dm.lat_min], [dm.lon_min, dm.lat_min]];
+    const firstSymbol = m.getStyle().layers.find((l) => l.type === "symbol")?.id; // keep place labels above the data
+    for (const id of ["A", "B"]) {
+      m.addSource(`field${id}`, { type: "image", url: BLANK, coordinates: quad });
+      m.addLayer({ id: `field${id}`, type: "raster", source: `field${id}`,
+        paint: { "raster-resampling": "nearest", "raster-fade-duration": 0, "raster-opacity": 0 } }, firstSymbol);
+      m.setPaintProperty(`field${id}`, "raster-opacity-transition", { duration: FADE_MS, delay: 0 });
     }
+    m.addSource("wind", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    m.addLayer({ id: "wind", type: "line", source: "wind", layout: { "line-cap": "round" },
+      paint: { "line-color": "#111827", "line-width": 1.6, "line-opacity": 0.9 } }, firstSymbol);
+    m.addSource("domain", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString",
+      coordinates: [[dm.lon_min, dm.lat_min], [dm.lon_max, dm.lat_min], [dm.lon_max, dm.lat_max], [dm.lon_min, dm.lat_max], [dm.lon_min, dm.lat_min]] } } });
+    m.addLayer({ id: "domain", type: "line", source: "domain", paint: { "line-color": "#1f2937", "line-width": 1.2, "line-dasharray": [3, 2] } });
+    active.current = "B"; // first paint goes into A
+    ready.current = true;
+    paint();
   };
 
   useEffect(() => {
     if (!box.current) return;
-    const topo = countriesTopo as unknown as Topology;
-    const land = feature(topo, topo.objects.countries as never) as unknown as GeoJSON.FeatureCollection;
-    const borders = mesh(topo, topo.objects.countries as never, (a: unknown, b: unknown) => a !== b);
     const d = latest.current.meta.domain;
     const m = new maplibregl.Map({
       container: box.current,
-      style: { version: 8, sources: {}, layers: [{ id: "sea", type: "background", paint: { "background-color": "#dbe9f1" } }] },
+      // ?offline simulates an unreachable hosted basemap (used to test the fallback path).
+      style: location.search.includes("offline") ? "https://offline.invalid/style.json" : BASEMAPS[latest.current.basemap],
       bounds: [[d.lon_min - 2, d.lat_min - 2], [d.lon_max + 2, d.lat_max + 2]],
       maxBounds: [[d.lon_min - 25, d.lat_min - 20], [d.lon_max + 25, d.lat_max + 20]],
       attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
     });
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    m.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Boundaries: Natural Earth via world-atlas" }));
-    m.on("load", () => {
-      m.addSource("land", { type: "geojson", data: land });
-      m.addSource("borders", { type: "geojson", data: { type: "Feature", properties: {}, geometry: borders } });
-      m.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": "#f4f1ea" } });
-      m.addLayer({ id: "borders", type: "line", source: "borders", paint: { "line-color": "#6b6b6b", "line-width": 0.8 } });
-      // Domain outline: shows exactly where forecast data exists.
-      m.addSource("domain", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString",
-        coordinates: [[d.lon_min, d.lat_min], [d.lon_max, d.lat_min], [d.lon_max, d.lat_max], [d.lon_min, d.lat_max], [d.lon_min, d.lat_min]] } } });
-      m.addLayer({ id: "domain", type: "line", source: "domain", paint: { "line-color": "#1f2937", "line-width": 1.2, "line-dasharray": [3, 2] } });
-      ready.current = true;
-      paint();
-    });
+    m.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
+    m.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Forecast: ECMWF Open Data (IFS), CC-BY-4.0" }), "bottom-right");
+
+    let styleOk = false;
+    m.on("style.load", () => { styleOk = true; ready.current = false; install(m); });
+    // If the hosted basemap cannot be reached, switch to the bundled outline map instead of showing nothing.
+    const bail = async () => {
+      if (styleOk || !map.current) return;
+      latest.current.onBasemapFailed();
+      m.setStyle(await fallbackStyle());
+    };
+    const timer = window.setTimeout(bail, 9000);
+    m.on("error", (e) => { if (!styleOk && /fetch|load|network|style/i.test(String(e.error?.message ?? ""))) void bail(); });
+
     m.on("click", (e) => {
       const { lat, lng } = e.lngLat;
       const dm = latest.current.meta.domain;
@@ -117,11 +133,15 @@ export default function MapView({ meta, data, thresholds, marker, onPick, onOuts
     m.on("mouseout", () => latest.current.onHover(null));
     map.current = m;
     if (location.search.includes("debug")) (window as unknown as { __map: unknown }).__map = m; // inspection hook, opt-in only
-    m.on("error", (e) => console.error("maplibre error", e.error?.message ?? e));
-    return () => { m.remove(); map.current = null; ready.current = false; };
+    return () => { window.clearTimeout(timer); m.remove(); map.current = null; ready.current = false; mk.current = null; };
   }, []);
 
-  useEffect(paint, [data, thresholds]);
+  useEffect(paint, [data, scale, smooth]);
+
+  useEffect(() => {
+    if (firstStyle.current) { firstStyle.current = false; return; }
+    map.current?.setStyle(BASEMAPS[basemap]); // 'style.load' re-installs our layers
+  }, [basemap]);
 
   useEffect(() => {
     const m = map.current;
@@ -131,5 +151,5 @@ export default function MapView({ meta, data, thresholds, marker, onPick, onOuts
     else mk.current.setLngLat([marker.lon, marker.lat]);
   }, [marker]);
 
-  return <div ref={box} className="map" role="application" aria-label="Precipitation map of India. Click to select a location, or use the location controls." />;
+  return <div ref={box} className="map" role="application" aria-label="Weather map of India. Click to select a location, or use the location controls." />;
 }

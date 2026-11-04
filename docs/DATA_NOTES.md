@@ -34,3 +34,18 @@ wrong by up to (q_prev + q_cur)/2. All observed negatives are within that bound
 (e.g. step 6: −3.05e-5 vs bound 4.6e-5). Rule used in processing: a negative difference no more
 negative than −(q_prev+q_cur)/2 is treated as packing noise and set to 0; anything larger raises
 an error. Consequence: interval totals have uncertainty up to ~0.1–0.25 mm per cell from packing alone.
+
+## Additional variables (verified 2026-11-04, same run)
+Fetched per step by the same index+Range method (5 messages/step, 245 per run, ~134 MB per run).
+| param | GRIB name | units in file | stepType | packing | app unit |
+|-------|-----------|---------------|----------|---------|----------|
+| 2t  | 2 metre temperature | K | instant | 9 bits (~0.2 K) | degC = K - 273.15 |
+| tcc | Total cloud cover | (0 - 1) | instant | 7 bits (~1 %) | % = x100 |
+| 10u / 10v | 10 metre U/V wind | m s**-1 | instant | 11 bits (~0.03 m/s) | m/s; speed = hypot(u,v) |
+- All instantaneous: valid at the step time, never differenced, step 0 is valid.
+- Wind direction is reported as the meteorological "from" bearing: `(270 - atan2(v,u)) mod 360`.
+  Map arrows point the way the air moves (toward), which is the opposite bearing.
+- Processing rejects values outside plausible ranges (2t -90..60 degC, tcc 0..100 %, wind |u|,|v| <= 120 m/s).
+  Observed in run 2026-11-04 00 UTC over India: 2t -32.2..39.0 degC, wind max 12.9 m/s.
+- Display smoothing (bilinear between cell centres) is applied only when drawing the map; the API and the
+  hover/location readouts always use the 0.25 deg cell values.

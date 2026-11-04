@@ -1,18 +1,17 @@
-import type { Kind, RunMeta } from "./api";
+import type { RunMeta } from "./api";
 import { formatTime, type Zone } from "./time";
 
 interface Props {
   meta: RunMeta;
   index: number;
-  kind: Kind;
+  minIndex: number; // 1 when mapping interval totals (step 0 has none), else 0
   zone: Zone;
   playing: boolean;
   onIndex: (i: number) => void;
   onPlaying: (p: boolean) => void;
 }
 
-export default function Timeline({ meta, index, kind, zone, playing, onIndex, onPlaying }: Props) {
-  const min = kind === "interval" ? 1 : 0;
+export default function Timeline({ meta, index, minIndex: min, zone, playing, onIndex, onPlaying }: Props) {
   const max = meta.steps_h.length - 1;
   const step = (d: number) => onIndex(Math.min(max, Math.max(min, index + d)));
   return (

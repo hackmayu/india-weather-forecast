@@ -9,13 +9,17 @@ export interface RunMeta {
   freshness: Freshness; attribution: string;
 }
 export type Kind = "interval" | "cumulative";
+export type VariableId = "precip" | "temp" | "cloud" | "wind";
 export interface MapResp {
-  run_id: string; step_h: number; kind: Kind; valid_time_utc: string; accumulation_hours: number;
-  units: "mm"; lats: number[]; lons: number[]; values: number[][];
+  run_id: string; step_h: number; variable: VariableId; kind: Kind | "instant"; valid_time_utc: string;
+  accumulation_hours: number; units: string; lats: number[]; lons: number[]; values: number[][];
+  u?: number[][]; v?: number[][]; // wind components (m/s), present for variable=wind
 }
 export interface SeriesPoint {
   step_h: number; valid_time_utc: string; cumulative_mm: number;
   interval_mm: number | null; interval_hours: number | null;
+  // instantaneous fields; absent for runs processed before they were added
+  temp_c?: number; cloud_pct?: number; wind_speed_ms?: number; wind_from_deg?: number;
 }
 export interface PointResp {
   run_id: string; requested: { lat: number; lon: number }; grid_point: { lat: number; lon: number };
@@ -48,7 +52,7 @@ export interface Status {
 }
 export const fetchStatus = () => get<Status>("/api/status");
 export const fetchRun = () => get<RunMeta>("/api/runs/latest");
-export const fetchMap = (runId: string, step: number, kind: Kind) =>
-  get<MapResp>(`/api/runs/${runId}/map?step=${step}&kind=${kind}`);
+export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind) =>
+  get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}`);
 export const fetchPoint = (runId: string, lat: number, lon: number) =>
   get<PointResp>(`/api/runs/${runId}/point?lat=${lat}&lon=${lon}`);

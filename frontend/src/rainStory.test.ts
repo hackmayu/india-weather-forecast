@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildStory } from "./rainStory";
 import type { SeriesPoint } from "./api";
-import { classOf, THRESHOLDS } from "./colors";
+import { classOf, colorAt, getScale } from "./colors";
 
 const mk = (cum: number[], stepH = 12): SeriesPoint[] =>
   cum.map((c, i) => ({ step_h: i * stepH, valid_time_utc: "x", cumulative_mm: c,
@@ -29,9 +29,46 @@ describe("rain story", () => {
 
 describe("colour classes", () => {
   it("below first threshold is transparent (-1) and boundaries are inclusive", () => {
-    const t = THRESHOLDS.interval;
-    expect(classOf(0.09, t)).toBe(-1);
-    expect(classOf(0.1, t)).toBe(0);
-    expect(classOf(50, t)).toBe(t.length - 1);
+    const t = getScale("precip", "interval", "radar");
+    if (t.type !== "classes") throw new Error("expected classes");
+    expect(classOf(0.09, t.thresholds)).toBe(-1);
+    expect(classOf(0.1, t.thresholds)).toBe(0);
+    expect(classOf(75, t.thresholds)).toBe(t.thresholds.length - 1);
+    expect(colorAt(t, 0.05)[3]).toBe(0);          // transparent below the first class
+    expect(colorAt(t, 3)[3]).toBeGreaterThan(0);
+  });
+});
+
+import { buildFacts, compass } from "./rainStory";
+describe("compass and facts", () => {
+  it("names bearings (direction wind comes FROM)", () => {
+    expect([0, 90, 180, 270, 225, 359].map(compass)).toEqual(["N", "E", "S", "W", "SW", "N"]);
+  });
+  it("finds temperature extremes and strongest wind", () => {
+    const s = [10, 25, 18].map((t, i) => ({ step_h: i * 3, valid_time_utc: "x", cumulative_mm: 0, interval_mm: null, interval_hours: null,
+      temp_c: t, cloud_pct: 50, wind_speed_ms: [2, 9, 4][i], wind_from_deg: [0, 270, 90][i] }));
+    const f = buildFacts(s);
+    expect(f.tMin).toEqual({ idx: 0, v: 10 });
+    expect(f.tMax).toEqual({ idx: 1, v: 25 });
+    expect(f.windMax).toEqual({ idx: 1, v: 9, from: 270 });
+    expect(f.cloudMean).toBe(50);
+  });
+});
+
+describe("ramp scales", () => {
+  it("interpolates temperature colours linearly between stops", () => {
+    const s = getScale("temp", "interval", "radar");
+    const at0 = colorAt(s, 0), at10 = colorAt(s, 10), mid = colorAt(s, 5);
+    expect(mid[0]).toBeCloseTo((at0[0] + at10[0]) / 2, -0.5);
+  });
+  it("cloud cover is transparent at 0 % and increasingly opaque", () => {
+    const s = getScale("cloud", "interval", "radar");
+    expect(colorAt(s, 0)[3]).toBe(0);
+    expect(colorAt(s, 100)[3]).toBeGreaterThan(colorAt(s, 50)[3]);
+  });
+  it("clamps outside the stop range", () => {
+    const s = getScale("temp", "interval", "radar");
+    expect(colorAt(s, -80)).toEqual(colorAt(s, -30));
+    expect(colorAt(s, 80)).toEqual(colorAt(s, 40));
   });
 });

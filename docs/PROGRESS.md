@@ -34,3 +34,13 @@ service (Render docs, checked 2026-11-04: spins down after 15 min idle, ephemera
 instance hours/month, no free cron jobs; native Python runtime includes Node/npm; RAM figure NOT
 verified). Refresh therefore runs inside the app (`precip/refresh.py`) seeded by a dated snapshot.
 Hugging Face Spaces was rejected: community posts conflict on whether free Docker Spaces still exist.
+
+## Realism upgrade (2026-11-04, requested by applicant)
+Applicant asked for a more realistic UI and forecast presentation and selected all four options:
+smooth radar-style map, richer basemap/labels, animation polish, more ECMWF variables.
+- Done: smooth radar-style rendering (toggle to raw cells), OpenFreeMap basemap (Light/Detailed) with
+  an offline fallback, cross-fade between time steps, 2 m temperature / cloud cover / 10 m wind with arrows.
+- Not done on purpose: synthetic "rain motion" particles. They would show movement that is not in the data;
+  the cross-fade only blends the display of two real time steps.
+- This cannot make the underlying forecast more accurate; it changes how it is shown and what is shown.
+- Cost: run payload grew from ~24 MB to ~134 MB per refresh (about 3 min cold fetch).
