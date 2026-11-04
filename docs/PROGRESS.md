@@ -107,3 +107,7 @@ success path (permission denied in the test browser).
 - Done: only the Claude co-author line was removed from 21 commit messages; all 22 trees, authors, dates and subjects verified
   identical; force-pushed with a lease. Old-to-new commit IDs are in `docs/history-rewrite-map.md` so the session log can be matched.
 - The assistance disclosure in README.md and this file is unchanged.
+
+## Vercel configuration (2026-11-04)
+- Vercel's import screen suggested a two-service layout. Applicant decision: option A (frontend-only service `web`, no backend, no bindings);
+  Vercel showed only the suggestion, no error. Config validated against Vercel's JSON schema; not run on Vercel yet.

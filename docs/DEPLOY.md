@@ -31,8 +31,9 @@ done by a GitHub Action instead (see below). Not verified on Vercel itself: this
 
 **Quick live link (dated snapshot, works immediately after the push)**
 1. Sign in at vercel.com (GitHub sign-in is simplest). **Stop and tell Claude if it asks for a card or a paid plan.**
-2. Add New... -> Project -> import `india-weather-forecast`. Leave every setting as is: `vercel.json` already sets the
-   install command, the build command (`npm run build:static`) and the output directory.
+2. Add New... -> Project -> import `india-weather-forecast`. Leave every setting as is. `vercel.json` uses Vercel's Services layout
+   with ONE public service, `web` (root `frontend/`, Vite, build command `npm run build:static`, output `dist`) and a catch-all rewrite
+   to it. There is no backend service on Vercel and no service bindings: the browser reads static files under `/data`.
 3. Deploy. The link serves the committed snapshot, labelled **Static snapshot** (it does not update by itself).
 
 **Live updates (recommended)**
@@ -67,3 +68,12 @@ service URL to activate `.github/workflows/keepalive.yml`. It uses ~744 of the 7
   `C:\Users\jalan\.claude\projects\C--Users-jalan-ppt\aadb2182-faa2-485c-a38f-7534910abdd7.jsonl`
   after the session's last message. Do not edit or trim it.
 - Deadline for the final commit: **2026-11-07 14:49 +05:30**.
+
+### Why the Vercel config has one service and no backend (decision recorded 2026-11-04)
+Vercel suggested a two-service layout (FastAPI backend + Vite frontend). The applicant chose the **frontend-only** layout (option A).
+Reasons: a Vercel function cannot run this project's background refresher or write its data files, so a backend service there would
+serve a frozen snapshot, and it could not be tested without a Vercel deploy; the static site already has live updates (GitHub Action
+-> `vercel-live`) and parity tests against the real API. The real FastAPI endpoints are deployed on Render (`render.yaml`).
+In Services mode, build keys must live inside the service, which is why `vercel.json` no longer has top-level `buildCommand` etc.
+The file was validated against Vercel's published JSON schema (0 errors); it has not been run on Vercel itself.
+Note: the `vercel-live` branch carries its own classic `vercel.json` (`deploy/vercel-static.json`) because it contains already-built files.
