@@ -16,13 +16,14 @@ at the applicant's direction; decisions are recorded below with who made them.
 | When | Decision | Made by |
 |------|----------|---------|
 | 2026-11-04 | IFS HRES 0.25°, India box 6–38°N / 66–100°E, 0–144 h at 3 h, keep 4 runs | Applicant approved Claude's proposal |
-| 2026-11-04 | Negative cumulative differences within packing quantum treated as noise; larger → error | Claude (to be reviewed by applicant) |
+| 2026-11-04 | Negative cumulative differences within packing quantum treated as noise; larger → error | Claude proposed, applicant accepted |
+| 2026-11-04 | API serves source cumulative values as-is (can dip by <=1 quantum between steps; 3073 of 848304 cell-steps in run 2026110400) | Claude, OPEN for applicant review |
 
 ## Checklist
 - [x] Environment inspected, start time recorded
 - [x] ECMWF docs + live server checked (see `DATA_NOTES.md`)
 - [x] M1: real tp series fetched (49 steps, 23.6 MB) and interpreted
-- [ ] M2: processing + minimal backend
+- [x] M2: processing + minimal backend (26 tests pass; wet-cell values match source GRIB)
 - [ ] M3: map, timeline, location view
 - [ ] M4: usability + scientific explanations
 - [ ] M5: verify, deploy, document
