@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import type { MapResp, RunMeta, VariableId } from "./api";
 import type { Scale } from "./colors";
 import { fallbackStyle } from "./fallbackStyle";
-import { renderGrid, windArrows } from "./render";
+import { rasterize, rasterToBlob, windArrows } from "./render";
 
 const CELL = 0.25;
 // Hosted vector basemaps from OpenFreeMap (no key, no cookies; OSM data, attribution shown on the map).
@@ -49,29 +49,41 @@ export default function MapView(props: Props) {
   latest.current = props;
   const firstStyle = useRef(true);
 
+  const paintSeq = useRef(0);                         // a newer paint supersedes an older one still encoding
+  const blobUrls = useRef<{ A?: string; B?: string }>({});
+
   const paint = () => {
     const m = map.current;
     const { data: d, scale: sc, smooth: sm } = latest.current;
     if (!m || !ready.current || !d) return;
-    const { url, coordinates } = renderGrid(d, sc, sm);
-    const next = active.current === "A" ? "B" : "A";
-    const nextSrc = m.getSource(`field${next}`) as maplibregl.ImageSource | undefined;
-    const prev = active.current;
-    if (!nextSrc) return;
-    nextSrc.updateImage({ url, coordinates: coordinates as Quad });
-    let flipped = false;
-    const flip = () => {
-      if (flipped || !map.current) return;
-      flipped = true;
-      // Cross-fade between the two image layers; this blends the DISPLAY only, no intermediate data is invented.
-      m.setPaintProperty(`field${next}`, "raster-opacity", 1);
-      m.setPaintProperty(`field${prev}`, "raster-opacity", 0);
-      active.current = next;
-    };
-    m.once("idle", flip);
-    window.setTimeout(flip, 250);
+    const seq = ++paintSeq.current;
+    const raster = rasterize(d, sc, sm);
     const wind = m.getSource("wind") as maplibregl.GeoJSONSource | undefined;
     wind?.setData(latest.current.variable === "wind" ? windArrows(d) : { type: "FeatureCollection", features: [] });
+    rasterToBlob(raster).then((blob) => {
+      const mm = map.current;
+      if (seq !== paintSeq.current || !mm) return;     // superseded (e.g. the slider moved on) or unmounted
+      const next = active.current === "A" ? "B" : "A";
+      const prev = active.current;
+      const nextSrc = mm.getSource(`field${next}`) as maplibregl.ImageSource | undefined;
+      if (!nextSrc) return;
+      const url = URL.createObjectURL(blob);
+      const old = blobUrls.current[next];
+      blobUrls.current[next] = url;
+      nextSrc.updateImage({ url, coordinates: raster.coordinates as Quad });
+      if (old) window.setTimeout(() => URL.revokeObjectURL(old), 3000);
+      let flipped = false;
+      const flip = () => {
+        if (flipped || !map.current) return;
+        flipped = true;
+        // Cross-fade between the two image layers; this blends the DISPLAY only, no intermediate data is invented.
+        mm.setPaintProperty(`field${next}`, "raster-opacity", 1);
+        mm.setPaintProperty(`field${prev}`, "raster-opacity", 0);
+        active.current = next;
+      };
+      mm.once("idle", flip);
+      window.setTimeout(flip, 250);
+    }).catch((e) => console.error("map paint failed", e));
   };
 
   const install = (m: maplibregl.Map) => {

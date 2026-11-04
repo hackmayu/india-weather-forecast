@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, fetchMap, fetchPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type ProbMeta, type ProbPointResp, type RunMeta, type Status, type VariableId } from "./api";
 import { getScale, type Palette } from "./colors";
 import CityOverview from "./CityOverview";
 import Overview from "./Overview";
 import Legend from "./Legend";
 import LocationPanel from "./LocationPanel";
-import MapView, { type Basemap, type Hover } from "./MapView";
+import type { Basemap, Hover } from "./MapView";
+const MapView = lazy(() => import("./MapView"));
 import Timeline from "./Timeline";
 import { CITIES, findCity } from "./cities";
 import { nearestWindow } from "./prob";
@@ -73,6 +74,13 @@ export default function App() {
   const [sysDark, setSysDark] = useState(() => typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches);
 
   const [mapData, setMapData] = useState<MapResp | null>(null);
+  // Secondary panels (all-cities overview, previous-run comparison) download many data files; wait until the map is drawn and the page has been quiet for a moment.
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (!mapData || idle) return;
+    const id = window.setTimeout(() => setIdle(true), 1500);
+    return () => window.clearTimeout(id);
+  }, [mapData, idle]);
   const [mapLoading, setMapLoading] = useState(false);
   const [mapErr, setMapErr] = useState<string | null>(null);
   const cache = useRef(new Map<string, MapResp>());
@@ -292,7 +300,7 @@ export default function App() {
   // Same place in the previous run, for the run-to-run comparison.
   useEffect(() => {
     setPrev(null);
-    if (!meta || !point || point.run_id !== meta.run_id) return;
+    if (!idle || !meta || !point || point.run_id !== meta.run_id) return;
     let live = true;
     fetchRuns().then(async ({ runs }) => {
       const older = runs.find((r) => r.issue_time_utc < meta.issue_time_utc);
@@ -301,7 +309,7 @@ export default function App() {
       if (live) setPrev({ point: p, issueIso: older.issue_time_utc });
     }).catch(() => undefined);
     return () => { live = false; };
-  }, [meta, point]);
+  }, [meta, point, idle]);
 
   const copyLink = async () => {
     try { await navigator.clipboard.writeText(location.href); setCopied(true); window.setTimeout(() => setCopied(false), 2500); }
@@ -510,8 +518,10 @@ export default function App() {
             {when.cls === "past" && <> <span className="muted">Model value for a time that has passed; not an observation.</span></>}
           </p>
           <div className="mapwrap">
+            <Suspense fallback={<div className="map map-skeleton" aria-hidden="true" />}>
             <MapView meta={meta} data={mapData} variable={variable} scale={scale} smooth={smooth} basemap={basemap} dark={dark} marker={marker}
               onPick={choosePoint} onOutside={outside} onHover={setHover} onBasemapFailed={onBasemapFailed} />
+            </Suspense>
             {mapLoading && <div className="overlay" role="status">Loading map…</div>}
             {mapErr && <div className="overlay err" role="alert">{mapErr} <button type="button" onClick={() => setRetry((r) => r + 1)}>Retry</button></div>}
             {hover && <div className="hover" aria-hidden="true">{hover.lat.toFixed(2)}°N {hover.lon.toFixed(2)}°E · {fmtHover(hover.value)} (grid cell)</div>}
@@ -565,8 +575,10 @@ export default function App() {
             <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} prob={probPoint} probMeta={probMeta} selectedWindowEnd={probWin?.window.end_h ?? null} threshold={threshold}
               nowMs={nowMs} onBack={backToMap} onPickPreset={choosePoint} />
           </div>
-          <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
-          <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
+          {idle ? <>
+            <Overview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
+            <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
+          </> : <div className="panel-skeleton" aria-hidden="true" />}
         </aside>
       </main>
 
