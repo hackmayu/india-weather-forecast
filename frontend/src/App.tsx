@@ -5,7 +5,9 @@ import Legend from "./Legend";
 import LocationPanel from "./LocationPanel";
 import MapView, { type Basemap, type Hover } from "./MapView";
 import Timeline from "./Timeline";
+import { CITIES, findCity } from "./cities";
 import { formatTime, fracIndex, indexForNow, nearestIndex, nextRun, relTime, zoneName, type Zone } from "./time";
+import { buildSearch, parseUrl } from "./urlState";
 
 const PRESETS = [
   { name: "Mumbai", lat: 19.08, lon: 72.88 }, { name: "Delhi", lat: 28.61, lon: 77.21 },
@@ -29,9 +31,12 @@ export default function App() {
   const [meta, setMeta] = useState<RunMeta | null>(null);
   const [metaErr, setMetaErr] = useState<string | null>(null);
   const [index, setIndex] = useState(8);
-  const [variable, setVariable] = useState<VariableId>("precip");
-  const [kind, setKind] = useState<Kind>("interval");
-  const [zone, setZone] = useState<Zone>("local");
+  const [urlInit] = useState(() => parseUrl(location.search)); // shared-link state, read once
+  const [variable, setVariable] = useState<VariableId>(urlInit.v ?? "precip");
+  const [kind, setKind] = useState<Kind>(urlInit.k ?? "interval");
+  const [zone, setZone] = useState<Zone>(urlInit.z ?? "local");
+  const [copied, setCopied] = useState(false);
+  const [cityIn, setCityIn] = useState("");
   const [playing, setPlaying] = useState(false);
   const [palette, setPalette] = useState<Palette>(lsGet("palette", "radar") as Palette);
   const [smooth, setSmooth] = useState(lsGet("smooth", "1") === "1");
@@ -102,14 +107,46 @@ export default function App() {
     if (!meta) return;
     if (firstLoad.current) {
       firstLoad.current = false;
-      const n = indexForNow(meta.valid_times_utc, Date.now(), true);
-      if (n.state === "within") setIndex(n.index);
+      const tMs = urlInit.t ? Date.parse(urlInit.t) : NaN;
+      const vt = meta.valid_times_utc.map((v) => Date.parse(v));
+      if (!Number.isNaN(tMs) && tMs >= vt[0] && tMs <= vt[vt.length - 1]) {
+        setIndex(nearestIndex(meta.valid_times_utc, tMs)); // a shared link keeps its time while inside this run
+      } else {
+        const n = indexForNow(meta.valid_times_utc, Date.now(), true);
+        if (n.state === "within") setIndex(n.index);
+      }
+      if (urlInit.lat !== undefined && urlInit.lon !== undefined) choosePoint(urlInit.lat, urlInit.lon);
     } else if (selValid.current != null) {
       setIndex(nearestIndex(meta.valid_times_utc, selValid.current));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.run_id]);
   useEffect(() => { if (meta) selValid.current = Date.parse(meta.valid_times_utc[Math.min(index, meta.valid_times_utc.length - 1)]); }, [meta, index]);
+
+  // Keep the address bar in sync so the current view can be shared (replaceState: no history spam).
+  useEffect(() => {
+    if (!meta || firstLoad.current) return;
+    const t = meta.valid_times_utc[Math.min(index, meta.valid_times_utc.length - 1)];
+    const next = buildSearch(location.search, { v: variable, k: kind, t, lat: loc?.lat, lon: loc?.lon, z: zone }) + location.hash;
+    if (next !== location.search + location.hash) history.replaceState(null, "", location.pathname + next);
+  }, [meta, index, variable, kind, loc, zone]);
+
+  // Keyboard shortcuts (only when focus is not on a control or the map): Space play/pause, arrows step, N = now.
+  useEffect(() => {
+    if (!meta) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (["INPUT", "SELECT", "TEXTAREA", "BUTTON", "A", "SUMMARY"].includes(el.tagName) || el.isContentEditable || el.closest?.(".map"))) return;
+      const min = variable === "precip" && kind === "interval" ? 1 : 0;
+      if (e.key === " ") { e.preventDefault(); setPlaying((p) => !p); }
+      else if (e.key === "ArrowRight") setIndex((i) => Math.min(meta.steps_h.length - 1, i + 1));
+      else if (e.key === "ArrowLeft") setIndex((i) => Math.max(min, i - 1));
+      else if (e.key === "n" || e.key === "N") setIndex(indexForNow(meta.valid_times_utc, Date.now(), min === 1).index);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [meta, variable, kind]);
 
   // Auto-update: when the backend has a newer run, switch to it, keeping the time and place.
   useEffect(() => {
@@ -187,6 +224,26 @@ export default function App() {
     return () => { live = false; };
   }, [meta, point]);
 
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(location.href); setCopied(true); window.setTimeout(() => setCopied(false), 2500); }
+    catch { window.prompt("Copy this link", location.href); }
+  };
+
+  const useMyLocation = () => {
+    if (!meta) return;
+    if (!navigator.geolocation) { setNotice("Your browser does not support location lookup. Pick a place on the map or by name."); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: la, longitude: lo } = pos.coords;
+        const d = meta.domain;
+        if (la >= d.lat_min && la <= d.lat_max && lo >= d.lon_min && lo <= d.lon_max) choosePoint(la, lo);
+        else setNotice(`Your location is outside the forecast area (${d.lat_min}–${d.lat_max}°N, ${d.lon_min}–${d.lon_max}°E).`);
+      },
+      (err) => setNotice(err.code === 1 ? "Location permission was denied. You can still pick a place on the map or by name." : "Could not determine your location."),
+      { timeout: 10_000, maximumAge: 60_000 },
+    );
+  };
+
   const outside = useCallback(() => {
     if (!meta) return;
     const d = meta.domain;
@@ -242,6 +299,7 @@ export default function App() {
           <button type="button" className="link" onClick={() => setZone(zone === "local" ? "utc" : "local")} aria-label={`Times are shown in ${zoneName(zone)}. Switch to ${zone === "local" ? "UTC" : "local time"}`}>
             🕒 {zoneName(zone)} ⇄
           </button>
+          <button type="button" className="link" onClick={copyLink} aria-label="Copy a link to this exact view">🔗 {copied ? "Link copied" : "Copy link"}</button>
           <button type="button" className="link" onClick={() => setTheme(theme === "auto" ? "dark" : theme === "dark" ? "light" : "auto")} aria-label={`Theme: ${theme}. Click to change.`}>
             ◐ Theme: {theme}
           </button>
@@ -341,6 +399,14 @@ export default function App() {
           <form className="locform" id="locations" tabIndex={-1} onSubmit={(e) => { e.preventDefault(); const la = Number(latIn), lo = Number(lonIn); if (latIn.trim() === "" || lonIn.trim() === "" || !isFinite(la) || !isFinite(lo)) { setNotice("Enter numeric latitude and longitude."); return; } choosePoint(la, lo); }}>
             <fieldset>
               <legend>Choose a location</legend>
+              <div className="citysearch">
+                <label>Search a city
+                  <input list="city-list" value={cityIn} placeholder="e.g. Pune" autoComplete="off"
+                    onChange={(e) => { setCityIn(e.target.value); const c = findCity(e.target.value); if (c) choosePoint(c.lat, c.lon); }} />
+                </label>
+                <datalist id="city-list">{CITIES.map((c) => <option key={c.name} value={c.name} />)}</datalist>
+                <button type="button" onClick={useMyLocation} title="Uses your browser's location once; it is only used to look up the nearest forecast grid cell.">📍 Use my location</button>
+              </div>
               <div className="presets">
                 {PRESETS.map((p) => <button type="button" key={p.name} onClick={() => choosePoint(p.lat, p.lon)}>{p.name}</button>)}
               </div>
@@ -367,6 +433,7 @@ export default function App() {
             <li>Values are grid-cell values at 0.25° (~28 km). A selected place gets the <strong>nearest cell</strong>, not an interpolated or point value. The smooth map display is visual only.</li>
             <li>Rain totals are differences of the model's cumulative precipitation. Values are stored with limited precision, so amounts below about 0.25 mm are indistinguishable from zero and cumulative values may dip very slightly between steps.</li>
             <li>Temperature, cloud and wind are instantaneous values at the valid time. Wind is the 10 m wind; arrows show where the air moves toward. Cloud cover is stored coarsely (about 1 %).</li>
+            <li className="shortcuts">Keyboard: <kbd>Space</kbd> play/pause, <kbd>←</kbd> <kbd>→</kbd> step time, <kbd>N</kbd> jump to now (when no control or the map has focus). Hover or tap a chart to read values.</li>
             <li>This is not observed weather, an official warning, or travel/safety advice. Use your national weather service for warnings.</li>
           </ul>
         </details>

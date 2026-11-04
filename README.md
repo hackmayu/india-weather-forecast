@@ -39,6 +39,21 @@ forecast produced by this project.
   past. On the free host the service sleeps when idle (see Deployment); an optional workflow
   (`.github/workflows/keepalive.yml`, inert until you set `KEEPALIVE_URL`) can keep it awake.
 
+## Usability features
+
+- **Shareable links:** the address bar always reflects the view (variable, rain total type, valid time, place,
+  time zone); "Copy link" shares it. Parameters are strictly validated and ignored if invalid.
+- **Places:** map click, ~40 city search, six one-click cities, latitude/longitude entry, and "Use my location"
+  (browser permission, user-initiated; the position is only used to look up the nearest grid cell).
+- **Charts:** hover or tap shows the value and time; click selects that time. A data table and a
+  **CSV download** (with provenance and the "model values, not observations" note) are provided.
+- **24-hour summary** per place: rain total (exact cumulative difference), temperature range, strongest wind and
+  mean cloud for blocks counted from the run's issue time. Calendar days in local time are not used because they
+  do not line up with 3-hourly UTC steps.
+- **Keyboard:** Space play/pause, left/right arrows step time, N jumps to now (when no control or the map has
+  focus); skip link to the location chooser. **Dark theme** (auto/light/dark), reduced-motion respected,
+  an error boundary instead of a blank page.
+
 ## Problem and intended users
 
 Raw forecast files are hard to read: precipitation is stored as an *accumulation since the start of the
@@ -227,15 +242,15 @@ Observed during development (2026-11-04), not aspirational:
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 24 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison), strict TypeScript, production build.
+- **Frontend:** 32 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
-  play/pause, variable switching, basemap fallback (simulated unreachable basemap), no horizontal overflow.
+  play/pause, variable switching, shared-link restore (variable, time, place, zone), city search, CSV content, chart hover values, 24 h table, Space/arrow shortcuts, basemap fallback (simulated unreachable basemap), no horizontal overflow.
 - **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with
   Auto-switch off the page announced the newer run without swapping data and loaded it on request; (b) with
   it on the page switched by itself within the 45 s poll and kept the selected valid time and place.
 - **Keyboard:** radio arrow keys change variable, Enter on a place button selects it, slider arrow keys
   step time with a spoken value, a skip link jumps to the location chooser; all 26 controls have names.
-  Not done: testing with an actual screen reader.
+  Not done: testing with an actual screen reader, and the success path of \"Use my location\" (the test browser denied permission, so only the denial message was checked).
 - **Cold-start refresh:** on an empty disk the refresher downloaded and processed a run in 52 s
   (precipitation only) and ~3 min 18 s for all five variables.
 

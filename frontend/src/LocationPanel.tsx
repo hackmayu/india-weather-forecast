@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { PointResp, RunMeta } from "./api";
+import { dailyBlocks } from "./blocks";
+import { csvFilename, toCsv } from "./csv";
 import { buildFacts, buildStory, compareRuns, compass } from "./rainStory";
 import { formatTime, type Zone } from "./time";
 
@@ -35,16 +38,20 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
   const dayTicks = series.map((s, i) => ({ s, i })).filter(({ s }) => s.step_h % 24 === 0);
   const peak = values.reduce<number>((b, v, i) => ((v ?? -1e9) > (values[b] ?? -1e9) ? i : b), 0);
   const fmt = (v: number) => (Math.abs(v) < 10 && v % 1 ? v.toFixed(1) : String(Math.round(v)));
+  const [hov, setHov] = useState<number | null>(null);
+  const idxAt = (e: React.PointerEvent<SVGSVGElement> | React.MouseEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const frac = ((e.clientX - r.left) / r.width) * W;
+    return Math.min(n - 1, Math.max(0, Math.round(((frac - PAD.l) / (W - PAD.l - PAD.r)) * (n - 1))));
+  };
+  const hv = hov != null ? values[hov] : null;
   return (
     <figure className="chart">
       <figcaption>{title}</figcaption>
       <svg viewBox={`0 0 ${W} ${H}`} role="img"
         aria-label={`${title}. Highest ${values[peak]?.toFixed(1)} ${unit} at ${formatTime(series[peak].valid_time_utc, zone)}. Full numbers are in the data table below.`}
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          const frac = ((e.clientX - r.left) / r.width) * W;
-          onIndex(Math.min(n - 1, Math.max(0, Math.round(((frac - PAD.l) / (W - PAD.l - PAD.r)) * (n - 1)))));
-        }}>
+        onPointerMove={(e) => setHov(idxAt(e))} onPointerLeave={() => setHov(null)}
+        onClick={(e) => onIndex(idxAt(e))}>
         {ticks.map((tk, i) => (
           <g key={i}><line x1={PAD.l} x2={W - PAD.r} y1={y(tk)} y2={y(tk)} className="grid" />
             <text x={PAD.l - 5} y={y(tk) + 3} textAnchor="end" className="axis">{fmt(tk)}</text></g>
@@ -57,6 +64,15 @@ function Chart({ title, unit, series, values, kind, index, onIndex, zone, color,
           : <polyline className="line" fill="none" style={color ? { stroke: color } : undefined} points={values.map((v, i) => `${x(i)},${y(v ?? 0)}`).join(" ")} />}
         {nowFrac != null && <g><line x1={x(nowFrac)} x2={x(nowFrac)} y1={PAD.t} y2={H - PAD.b} className="nowline" /><text x={x(nowFrac) + 3} y={PAD.t + 8} className="axis nowtext">now</text></g>}
         <line x1={x(index)} x2={x(index)} y1={PAD.t} y2={H - PAD.b} className="cursor" />
+        {hov != null && (
+          <g pointerEvents="none">
+            <line x1={x(hov)} x2={x(hov)} y1={PAD.t} y2={H - PAD.b} className="hoverline" />
+            {hv != null && <circle cx={x(hov)} cy={y(hv)} r={3.5} className="hoverdot" />}
+            <text x={x(hov) > W / 2 ? x(hov) - 6 : x(hov) + 6} y={PAD.t + 20} textAnchor={x(hov) > W / 2 ? "end" : "start"} className="tip">
+              {formatTime(series[hov].valid_time_utc, zone)} · {hv == null ? "–" : `${fmt(hv)} ${unit}`}
+            </text>
+          </g>
+        )}
         <text x={8} y={PAD.t + 4} className="axis unit" transform={`rotate(-90 8 ${H / 2})`} textAnchor="middle">{unit}</text>
       </svg>
     </figure>
@@ -75,6 +91,15 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
   const facts = buildFacts(s);
   const hasInstant = s[0].temp_c != null;
   const cmp = prev ? compareRuns(point, prev.point) : null;
+  const blocks = dailyBlocks(s);
+  const download = () => {
+    const blob = new Blob([toCsv(point, meta, new Date().toISOString())], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = csvFilename(point);
+    document.body.appendChild(a); a.click(); a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   const t = (i: number) => formatTime(s[i].valid_time_utc, zone);
   const t0 = (iso: string) => formatTime(iso, zone);
   return (
@@ -86,6 +111,26 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
       </p>
       <Chart title="Precipitation in each interval (mm per interval)" unit="mm" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
       <Chart title="Cumulative precipitation since issue time (mm)" unit="mm" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
+
+      <details className="blocks" open>
+        <summary>24-hour summary</summary>
+        <div className="table-wrap">
+          <table>
+            <caption>Blocks of 24 h counted from the run's issue time (they start at model steps so rain totals are exact; calendar days in local time do not line up with 3-hourly steps)</caption>
+            <thead><tr><th scope="col">Period</th><th scope="col">Rain (mm)</th>
+              {hasInstant && <><th scope="col">Temp min–max (°C)</th><th scope="col">Max wind (m/s)</th><th scope="col">Cloud avg (%)</th></>}</tr></thead>
+            <tbody>
+              {blocks.map((b) => (
+                <tr key={b.startIdx} aria-current={index > b.startIdx && index <= b.endIdx}>
+                  <th scope="row">{t(b.startIdx)} → {t(b.endIdx)}{b.hours < 24 ? ` (${b.hours} h)` : ""}</th>
+                  <td>{b.precipMm < 0.05 ? "<0.1" : b.precipMm.toFixed(1)}</td>
+                  {hasInstant && <><td>{b.tMin?.toFixed(1)} – {b.tMax?.toFixed(1)}</td><td>{b.windMax?.toFixed(1)}</td><td>{b.cloudMean != null ? Math.round(b.cloudMean) : ""}</td></>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       {prev && cmp && (
         <div className="compare">
@@ -134,6 +179,7 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
         <p className="muted small">One deterministic model run for a 0.25° cell (~28 km). It is not an observation, probability, warning or advice.</p>
       </div>
 
+      <p className="dl"><button type="button" onClick={download}>⬇ Download this series (CSV)</button></p>
       <details>
         <summary>Show data table</summary>
         <div className="table-wrap">

@@ -58,3 +58,8 @@ smooth radar-style map, richer basemap/labels, animation polish, more ECMWF vari
   auto-switch to new runs (keeps time and place), previous-run comparison, dark theme (auto/light/dark),
   optional inert keep-alive workflow.
 - Verified with real data: auto-switch 00 UTC -> 06 UTC kept place and valid time.
+
+## Usability round (2026-11-04 evening, requested by applicant: "more improve the app")
+Claude chose: shareable URL state, chart hover values, 24 h block summary, CSV download, city search +
+use-my-location, keyboard shortcuts, error boundary. Verified in browser with real data except the geolocation
+success path (permission denied in the test browser).
