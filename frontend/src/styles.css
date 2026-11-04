@@ -190,3 +190,17 @@ h1 { font-size: 1.5rem; letter-spacing: -.01em; }
 .citysearch label { display: flex; flex-direction: column; font-size: .8rem; color: var(--muted); flex: 1 1 180px; }
 .citysearch input { font: inherit; color: inherit; background: var(--card); border: 1px solid #9aa5b4; border-radius: 6px; padding: 6px 10px; min-height: 36px; }
 .shortcuts kbd { background: var(--soft); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: .8rem; }
+
+/* ---- v5: window totals, quick button, cities at a glance ---- */
+.winsel { font-size: .9rem; } .winsel select { min-height: 34px; padding: 3px 8px; }
+button.quick { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.glance { padding: 8px 12px; } .glance summary { cursor: pointer; font-weight: 600; font-size: 1.05rem; }
+.glance td { position: relative; }
+.bar-cell { position: absolute; left: 0; top: 4px; bottom: 4px; background: var(--bar); opacity: .25; border-radius: 0 3px 3px 0; max-width: 100%; }
+.glance td, .glance th { white-space: nowrap; }
+
+/* narrow screens: the legend sits under the map at full width (must come after the width rule above) */
+@media (max-width: 860px) {
+  .mapwrap { background: var(--card); }
+  .mapwrap .legend { width: auto; }
+}

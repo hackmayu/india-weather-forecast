@@ -18,14 +18,15 @@ const ACCESSIBLE = ["#d6ebf7", "#c6e2f5", "#9ccbec", "#6db0e0", "#4690d0", "#2f6
 
 const RAIN_INTERVAL = [0.1, 0.5, 1, 2.5, 5, 10, 20, 35, 50, 75];          // mm per interval
 const RAIN_CUMULATIVE = [0.1, 1, 5, 10, 25, 50, 100, 150, 200, 300];      // mm since issue time
+const RAIN_WINDOW = [0.1, 1, 2.5, 5, 10, 25, 50, 100, 150, 200];          // mm over a chosen window (e.g. 24 h)
 
 export function getScale(variable: Variable, kind: Kind, palette: Palette): Scale {
   switch (variable) {
     case "precip":
       return {
-        type: "classes", thresholds: kind === "interval" ? RAIN_INTERVAL : RAIN_CUMULATIVE,
+        type: "classes", thresholds: kind === "interval" ? RAIN_INTERVAL : kind === "window" ? RAIN_WINDOW : RAIN_CUMULATIVE,
         colors: palette === "radar" ? RADAR : ACCESSIBLE, unit: "mm",
-        title: kind === "interval" ? "Precipitation in the interval (mm of water)" : "Cumulative precipitation since issue time (mm of water)",
+        title: kind === "interval" ? "Precipitation in the interval (mm of water)" : kind === "window" ? "Precipitation over the window (mm of water)" : "Cumulative precipitation since issue time (mm of water)",
       };
     case "temp":
       return {

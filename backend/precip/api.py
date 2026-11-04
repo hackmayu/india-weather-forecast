@@ -11,7 +11,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 
 from . import config, refresh, store
-from .derive import wind_from_direction_deg
+from .derive import wind_from_direction_deg, window_total
 
 # Forecasts are issued every 6 h and appear on the server a few hours later. A run older than
 # this has missed at least two newer issue times, so we label it stale (a UI hint, not a verdict).
@@ -130,8 +130,10 @@ def _instant_field(r: store.RunData, variable: str) -> np.ndarray:
 def map_data(run_id: str = RunId,
              step: int = Query(..., ge=0, le=config.MAX_STEP_H, description="Forecast step in hours"),
              variable: Variable = Query("precip", description="precip (mm), temp (°C), cloud (%), wind (m/s)"),
-             kind: Literal["interval", "cumulative"] = Query(
-                 "interval", description="Only for variable=precip: interval total or cumulative since issue")) -> dict:
+             kind: Literal["interval", "cumulative", "window"] = Query(
+                 "interval", description="Only for variable=precip: interval total, cumulative since issue, or a window total"),
+             hours: int = Query(24, ge=3, le=config.MAX_STEP_H,
+                                description="Only for kind=window: length of the window in hours, ending at `step`")) -> dict:
     r = _resolve(run_id)
     steps = r.meta["steps_h"]
     if step not in steps:
@@ -141,6 +143,15 @@ def map_data(run_id: str = RunId,
            "valid_time_utc": r.meta["valid_times_utc"][i],
            "lats": [round(float(x), 4) for x in r.lats], "lons": [round(float(x), 4) for x in r.lons]}
     if variable == "precip":
+        if kind == "window":
+            start = step - hours
+            if start not in steps:
+                raise HTTPException(422, f"A {hours} h window ending at +{step} h would start at +{start} h, which is not a "
+                                         f"forecast step of this run (steps: {steps[0]}..{steps[-1]} h, every 3 h). "
+                                         "Choose a later end time or a shorter window.")
+            grid = window_total(r.cumulative_mm[i], r.cumulative_mm[steps.index(start)])
+            return {**out, "kind": kind, "accumulation_hours": hours, "units": "mm",
+                    "values": np.round(grid, 1).tolist()}
         if kind == "interval":
             if i == 0:
                 raise HTTPException(422, "step 0 has no interval total; use kind=cumulative or step >= 3")

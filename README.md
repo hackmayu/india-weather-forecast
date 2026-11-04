@@ -47,6 +47,11 @@ forecast produced by this project.
   (browser permission, user-initiated; the position is only used to look up the nearest grid cell).
 - **Charts:** hover or tap shows the value and time; click selects that time. A data table and a
   **CSV download** (with provenance and the "model values, not observations" note) are provided.
+- **Rain totals over any window:** "Window total" shows the rain accumulated over 6/12/24/48/72 h ending at the
+  selected time, and **Rain: next 24 h** jumps to the 24 h from now. A window is the difference of two cumulative
+  fields (floored at 0 for packing noise), so it is exact by construction. Hours must land on model steps.
+- **Cities at a glance:** 12 large cities ranked by rain over the next 24 h from now (nearest model steps), with
+  highest temperature and strongest wind; click a city to open it.
 - **24-hour summary** per place: rain total (exact cumulative difference), temperature range, strongest wind and
   mean cloud for blocks counted from the run's issue time. Calendar days in local time are not used because they
   do not line up with 3-hourly UTC steps.
@@ -176,7 +181,7 @@ Interactive API docs: `http://127.0.0.1:8000/docs`. Optional settings are listed
 ### Verification commands
 
 ```bash
-cd backend  && python -m pytest -q          # 44 tests
+cd backend  && python -m pytest -q          # 51 tests
 cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 ```
 
@@ -190,7 +195,7 @@ cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 | `GET /api/runs` | processed runs with age and stale flag |
 | `GET /api/runs/{run_id}` | metadata, provenance, freshness, attribution (`latest` accepted) |
 | `GET /api/runs/{run_id}/times` | valid times and the interval each step closes |
-| `GET /api/runs/{run_id}/map?step=&variable=&kind=` | regional grid; `variable` = precip, temp, cloud, wind; `kind` = interval or cumulative (precip only) |
+| `GET /api/runs/{run_id}/map?step=&variable=&kind=&hours=` | regional grid; `variable` = precip, temp, cloud, wind; `kind` = interval, cumulative or window (precip only; `hours` = window length ending at `step`, must land on a model step) |
 | `GET /api/runs/{run_id}/point?lat=&lon=` | time series at the nearest grid cell |
 
 Validation: run id pattern, step must be a real step of the run, `kind`/`variable` enums, finite in-domain
@@ -235,14 +240,14 @@ observations, alerts, accuracy claims or advice are generated, and no external A
 
 Observed during development (2026-11-04), not aspirational:
 
-- **Backend: 44 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
+- **Backend: 51 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
   noise vs. a real reset error, longitude wrapping, API validation, wind direction.
 - **Real-data checks:** processed values at five places and at the wettest cell (17.25°N 81.5°E,
   75.3 mm in 3 h) match values read straight from the source GRIB with eccodes' own nearest-point search
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 32 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list), strict TypeScript, production build.
+- **Frontend:** 35 unit tests (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
   play/pause, variable switching, shared-link restore (variable, time, place, zone), city search, CSV content, chart hover values, 24 h table, Space/arrow shortcuts, basemap fallback (simulated unreachable basemap), no horizontal overflow.
 - **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with

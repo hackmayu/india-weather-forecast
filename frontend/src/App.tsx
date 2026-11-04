@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, fetchMap, fetchPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type RunMeta, type Status, type VariableId } from "./api";
 import { getScale, type Palette } from "./colors";
+import CityOverview from "./CityOverview";
 import Legend from "./Legend";
 import LocationPanel from "./LocationPanel";
 import MapView, { type Basemap, type Hover } from "./MapView";
@@ -21,6 +22,19 @@ const VARIABLES: { id: VariableId; label: string; blurb: string }[] = [
   { id: "wind", label: "Wind", blurb: "10 m wind (speed colours, arrows show where the air moves toward)" },
 ];
 const PLAY_MS = 900;
+const WINDOW_OPTIONS = [6, 12, 24, 48, 72];
+
+/** First selectable step index: interval totals need a previous step; a window needs `hours` of run before it. */
+function minIndexFor(steps: number[] | undefined, variable: VariableId, kind: Kind, hours: number): number {
+  if (variable !== "precip") return 0;
+  if (kind === "interval") return 1;
+  if (kind === "window") {
+    if (!steps) return 1;
+    const i = steps.findIndex((s) => s >= hours);
+    return i < 0 ? steps.length - 1 : Math.max(1, i);
+  }
+  return 0;
+}
 const HOUR = 3_600_000;
 const STALE_H = 18; // a run older than this has missed at least two newer issue times
 type Theme = "auto" | "light" | "dark";
@@ -34,6 +48,7 @@ export default function App() {
   const [urlInit] = useState(() => parseUrl(location.search)); // shared-link state, read once
   const [variable, setVariable] = useState<VariableId>(urlInit.v ?? "precip");
   const [kind, setKind] = useState<Kind>(urlInit.k ?? "interval");
+  const [windowHours, setWindowHours] = useState<number>(urlInit.h ?? 24);
   const [zone, setZone] = useState<Zone>(urlInit.z ?? "local");
   const [copied, setCopied] = useState(false);
   const [cityIn, setCityIn] = useState("");
@@ -99,7 +114,13 @@ export default function App() {
   }, []);
   useEffect(loadMeta, [loadMeta]);
 
-  const minIndex = variable === "precip" && kind === "interval" ? 1 : 0;
+  const minIndex = minIndexFor(meta?.steps_h, variable, kind, windowHours);
+  // A shared link or a shorter run (06/18 UTC) may not support the chosen window length: fall back to the longest that fits.
+  useEffect(() => {
+    if (!meta) return;
+    const last = meta.steps_h[meta.steps_h.length - 1];
+    if (windowHours > last) setWindowHours(Math.max(...WINDOW_OPTIONS.filter((h) => h <= last), 6));
+  }, [meta, windowHours]);
   useEffect(() => { if (index < minIndex) setIndex(minIndex); }, [index, minIndex]);
 
   // First load: open at the step that contains "now". Later run switches keep the same valid time.
@@ -127,9 +148,9 @@ export default function App() {
   useEffect(() => {
     if (!meta || firstLoad.current) return;
     const t = meta.valid_times_utc[Math.min(index, meta.valid_times_utc.length - 1)];
-    const next = buildSearch(location.search, { v: variable, k: kind, t, lat: loc?.lat, lon: loc?.lon, z: zone }) + location.hash;
+    const next = buildSearch(location.search, { v: variable, k: kind, h: windowHours, t, lat: loc?.lat, lon: loc?.lon, z: zone }) + location.hash;
     if (next !== location.search + location.hash) history.replaceState(null, "", location.pathname + next);
-  }, [meta, index, variable, kind, loc, zone]);
+  }, [meta, index, variable, kind, windowHours, loc, zone]);
 
   // Keyboard shortcuts (only when focus is not on a control or the map): Space play/pause, arrows step, N = now.
   useEffect(() => {
@@ -138,15 +159,15 @@ export default function App() {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
       const el = e.target as HTMLElement | null;
       if (el && (["INPUT", "SELECT", "TEXTAREA", "BUTTON", "A", "SUMMARY"].includes(el.tagName) || el.isContentEditable || el.closest?.(".map"))) return;
-      const min = variable === "precip" && kind === "interval" ? 1 : 0;
+      const min = minIndexFor(meta.steps_h, variable, kind, windowHours);
       if (e.key === " ") { e.preventDefault(); setPlaying((p) => !p); }
       else if (e.key === "ArrowRight") setIndex((i) => Math.min(meta.steps_h.length - 1, i + 1));
       else if (e.key === "ArrowLeft") setIndex((i) => Math.max(min, i - 1));
-      else if (e.key === "n" || e.key === "N") setIndex(indexForNow(meta.valid_times_utc, Date.now(), min === 1).index);
+      else if (e.key === "n" || e.key === "N") setIndex(Math.max(min, indexForNow(meta.valid_times_utc, Date.now(), variable === "precip" && kind === "interval").index));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [meta, variable, kind]);
+  }, [meta, variable, kind, windowHours]);
 
   // Auto-update: when the backend has a newer run, switch to it, keeping the time and place.
   useEffect(() => {
@@ -166,25 +187,25 @@ export default function App() {
   useEffect(() => {
     if (!meta || index < minIndex || index >= meta.steps_h.length) return;
     const step = meta.steps_h[index];
-    const key = `${meta.run_id}|${step}|${variable}|${kind}`;
+    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}`;
     const hit = cache.current.get(key);
     if (hit) { setMapData(hit); setMapErr(null); return; }
     let live = true;
     setMapLoading(true); setMapErr(null);
-    fetchMap(meta.run_id, step, variable, kind)
+    fetchMap(meta.run_id, step, variable, kind, windowHours)
       .then((d) => { cache.current.set(key, d); if (live) setMapData(d); })
       .catch((e: Error) => { if (live) setMapErr(e.message); })
       .finally(() => { if (live) setMapLoading(false); });
     return () => { live = false; };
-  }, [meta, index, variable, kind, retry, minIndex]);
+  }, [meta, index, variable, kind, windowHours, retry, minIndex]);
 
   // Prefetch the next step so playback is smooth.
   useEffect(() => {
     if (!meta || index + 1 >= meta.steps_h.length) return;
     const step = meta.steps_h[index + 1];
-    const key = `${meta.run_id}|${step}|${variable}|${kind}`;
-    if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind).then((d) => cache.current.set(key, d)).catch(() => undefined);
-  }, [meta, index, variable, kind]);
+    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}`;
+    if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind, windowHours).then((d) => cache.current.set(key, d)).catch(() => undefined);
+  }, [meta, index, variable, kind, windowHours]);
 
   useEffect(() => {
     if (!playing || !meta) return;
@@ -266,7 +287,14 @@ export default function App() {
   const startIso = safeIndex > 0 ? meta.valid_times_utc[safeIndex - 1] : meta.valid_times_utc[0];
   const marker = point ? point.grid_point : null;
   const vInfo = VARIABLES.find((v) => v.id === variable)!;
-  const legendTitle = variable === "precip" && kind === "interval" ? `Precipitation in the ${durH || 3} h interval (mm of water)` : scale.title;
+  const lastStep = meta.steps_h[meta.steps_h.length - 1];
+  // "Next h hours": a window total ending h hours from now (nearest model step; clamped to the run's end).
+  const nextHours = (h: number) => {
+    setVariable("precip"); setKind("window"); setWindowHours(h);
+    setIndex(nearestIndex(meta.valid_times_utc, nowMs + h * HOUR));
+  };
+  const legendTitle = variable === "precip" && kind === "interval" ? `Precipitation in the ${durH || 3} h interval (mm of water)`
+    : variable === "precip" && kind === "window" ? `Precipitation over the ${windowHours} h ending at the valid time (mm of water)` : scale.title;
   const fmtHover = (v: number) => (variable === "cloud" ? Math.round(v) : v.toFixed(1)) + " " + (mapData?.units ?? "");
 
   // ---- real-time context (browser clock vs forecast timeline) ----
@@ -275,12 +303,14 @@ export default function App() {
   const stale = ageMs > STALE_H * HOUR;
   const nr = nextRun(issueMs, nowMs);
   const pubMs = meta.published_at_utc ? Date.parse(meta.published_at_utc) : null;
-  const nowInfo = indexForNow(meta.valid_times_utc, nowMs, minIndex === 1);
+  const nowInfo = indexForNow(meta.valid_times_utc, nowMs, variable === "precip" && kind === "interval");
   const nowFrac = fracIndex(meta.valid_times_utc, nowMs);
   const validMs = Date.parse(validIso), startMs = Date.parse(startIso);
   const isInterval = variable === "precip" && kind === "interval";
+  const isWindow = variable === "precip" && kind === "window";
   let when: { label: string; cls: string; title: string };
-  if (isInterval && nowMs >= startMs && nowMs < validMs) when = { label: "Includes now", cls: "now", title: "The current time falls inside this interval." };
+  if (isWindow && nowMs >= validMs - windowHours * HOUR && nowMs < validMs) when = { label: "Includes now", cls: "now", title: "The current time falls inside this window." };
+  else if (isInterval && nowMs >= startMs && nowMs < validMs) when = { label: "Includes now", cls: "now", title: "The current time falls inside this interval." };
   else if (!isInterval && variable !== "precip" && Math.abs(validMs - nowMs) <= 1.5 * HOUR) when = { label: "≈ Now", cls: "now", title: "This step is the nearest model time to the current time." };
   else if (validMs <= nowMs) when = { label: "Past model step", cls: "past", title: "The model's value for a time that has already passed. It is a forecast value, not an observation." };
   else when = { label: "Future", cls: "future", title: "Forecast for a time that has not happened yet." };
@@ -348,12 +378,19 @@ export default function App() {
                 </label>
               ))}
             </div>
+            {variable === "precip" && kind === "window" && (
+              <label className="winsel">Window{" "}
+                <select value={windowHours} onChange={(e) => setWindowHours(Number(e.target.value))}>
+                  {WINDOW_OPTIONS.filter((h) => h <= lastStep).map((h) => <option key={h} value={h}>{h} h</option>)}
+                </select></label>
+            )}
+            <button type="button" className="quick" onClick={() => nextHours(24)} title="Rain accumulated over the 24 hours from now (nearest model steps)">🌧 Rain: next 24 h</button>
             {variable === "precip" && (
               <div className="seg small" role="radiogroup" aria-label="Precipitation total">
-                {(["interval", "cumulative"] as Kind[]).map((k) => (
+                {(["interval", "window", "cumulative"] as Kind[]).map((k) => (
                   <label key={k} className={kind === k ? "on" : ""}>
                     <input type="radio" name="kind" checked={kind === k} onChange={() => setKind(k)} />
-                    {k === "interval" ? "Interval total" : "Cumulative"}
+                    {k === "interval" ? "Interval total" : k === "window" ? "Window total" : "Cumulative"}
                   </label>
                 ))}
               </div>
@@ -363,7 +400,9 @@ export default function App() {
             <span className={`when ${when.cls}`} title={when.title}>{when.label}</span>{" "}
             <strong>Valid {formatTime(validIso, zone)}</strong> (+{step} h).{" "}
             {variable === "precip"
-              ? (kind === "interval"
+              ? (kind === "window"
+                ? <>Rain accumulated over the <strong>{windowHours} h</strong> from {formatTime(meta.valid_times_utc[Math.max(0, meta.steps_h.indexOf(step - windowHours))], zone)} to {formatTime(validIso, zone)}.</>
+                : kind === "interval"
                 ? <>Rain accumulated in the <strong>{durH} h</strong> from {formatTime(startIso, zone, false)} to {formatTime(validIso, zone, false)}.</>
                 : <>Rain accumulated since the run was issued ({formatTime(meta.issue_time_utc, zone)}), a <strong>{step} h</strong> total.</>)
               : <>Model {vInfo.blurb} <strong>at this instant</strong> (not an accumulation or an average).</>}
@@ -418,6 +457,7 @@ export default function App() {
             </fieldset>
             {notice && <p className="error" role="alert">{notice}</p>}
           </form>
+          <CityOverview meta={meta} nowMs={nowMs} zone={zone} onPick={choosePoint} />
           <LocationPanel meta={meta} point={point} loading={pointLoading} error={pointErr} index={safeIndex} zone={zone} onIndex={setIndex} nowFrac={nowFrac} prev={prev} />
         </aside>
       </main>

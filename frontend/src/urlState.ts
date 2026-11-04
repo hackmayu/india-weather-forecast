@@ -3,12 +3,12 @@ import type { Zone } from "./time";
 
 // Shareable view state kept in the query string (not the hash: #locations is the skip-link target).
 // Only user-chosen view state is stored; display preferences such as theme/basemap stay per-browser.
-export interface UrlState { v?: VariableId; k?: Kind; t?: string; lat?: number; lon?: number; z?: Zone }
+export interface UrlState { v?: VariableId; k?: Kind; h?: number; t?: string; lat?: number; lon?: number; z?: Zone }
 
 const VARS = ["precip", "temp", "cloud", "wind"];
-const KINDS = ["interval", "cumulative"];
+const KINDS = ["interval", "cumulative", "window"];
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
-const KEYS = ["v", "k", "t", "lat", "lon", "z"];
+const KEYS = ["v", "k", "h", "t", "lat", "lon", "z"];
 
 /** Strictly validated: anything unexpected is ignored, never trusted. */
 export function parseUrl(search: string): UrlState {
@@ -17,6 +17,8 @@ export function parseUrl(search: string): UrlState {
   const v = q.get("v"), k = q.get("k"), t = q.get("t"), z = q.get("z");
   if (v && VARS.includes(v)) out.v = v as VariableId;
   if (k && KINDS.includes(k)) out.k = k as Kind;
+  const h = Number(q.get("h"));
+  if (q.get("h") && Number.isInteger(h) && h >= 3 && h <= 144 && h % 3 === 0) out.h = h;
   if (t && ISO.test(t) && !Number.isNaN(Date.parse(t))) out.t = t;
   if (z === "utc" || z === "local") out.z = z;
   const rawLat = q.get("lat"), rawLon = q.get("lon");
@@ -33,6 +35,7 @@ export function buildSearch(current: string, s: UrlState): string {
   for (const key of KEYS) q.delete(key);
   if (s.v && s.v !== "precip") q.set("v", s.v);
   if (s.k && s.k !== "interval") q.set("k", s.k);
+  if (s.k === "window" && s.h) q.set("h", String(s.h));
   if (s.t) q.set("t", s.t);
   if (s.lat !== undefined && s.lon !== undefined) { q.set("lat", s.lat.toFixed(4)); q.set("lon", s.lon.toFixed(4)); }
   if (s.z === "utc") q.set("z", "utc");

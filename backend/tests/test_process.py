@@ -83,3 +83,9 @@ def test_implausible_or_unknown_units_are_rejected_not_displayed():
 ])
 def test_wind_from_direction_is_meteorological(u, v, expected):
     assert float(wind_from_direction_deg(u, v)) == pytest.approx(expected)
+
+
+def test_window_total_floors_packing_noise_at_zero():
+    from precip.derive import window_total
+    end = np.array([5.0, 0.3, 2.0]); start = np.array([2.0, 0.4, 2.0])
+    assert window_total(end, start).tolist() == pytest.approx([3.0, 0.0, 0.0])   # -0.1 is packing noise, not rain

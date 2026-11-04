@@ -63,3 +63,12 @@ smooth radar-style map, richer basemap/labels, animation polish, more ECMWF vari
 Claude chose: shareable URL state, chart hover values, 24 h block summary, CSV download, city search +
 use-my-location, keyboard shortcuts, error boundary. Verified in browser with real data except the geolocation
 success path (permission denied in the test browser).
+
+## Features round 3 (2026-11-04 night, applicant: "make the project more good and add more features")
+- Added rain window totals (API `kind=window&hours=`) with a Next 24 h button and a cities-at-a-glance table.
+- Found officially published ECMWF ENS probability products (`tpg1..tpg100`, 00/12 UTC runs only, 24 h windows).
+  NOT implemented: it changes the project's "no probabilities" position and adds data/validation work, so it is
+  offered to the applicant as a decision.
+- Clean-clone deployment rehearsal (fresh venv, npm ci, build, cold start): API, frontend and snapshot seeding
+  work; one first attempt showed only one of two snapshot runs seeded and could not be reproduced in two further
+  cold starts (cause unknown; seeding code reviewed and unit-tested).

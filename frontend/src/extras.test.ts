@@ -67,3 +67,39 @@ describe("cities", () => {
     expect(findCity("Atlantis")).toBeUndefined();
   });
 });
+
+import { buildGlance } from "./CityOverview";
+describe("window URL param", () => {
+  it("accepts only whole 3-hour multiples within the horizon", () => {
+    expect(parseUrl("?k=window&h=24")).toEqual({ k: "window", h: 24 });
+    expect(parseUrl("?h=4")).toEqual({});
+    expect(parseUrl("?h=500")).toEqual({});
+    expect(buildSearch("", { k: "window", h: 48 })).toBe("?k=window&h=48");
+    expect(buildSearch("", { k: "interval", h: 48 })).toBe("");      // h only matters for windows
+  });
+});
+
+describe("cities at a glance", () => {
+  const valid = [0, 6, 12, 18, 24, 30].map((h) => new Date(Date.UTC(2026, 10, 4, h)).toISOString().replace(".000", ""));
+  const meta = { valid_times_utc: valid, steps_h: [0, 6, 12, 18, 24, 30] } as unknown as RunMeta;
+  const mk = (cum: number[], temps: number[]) => ({ run_id: "x", requested: { lat: 0, lon: 0 }, grid_point: { lat: 0, lon: 0 }, method: "", units: "mm" as const,
+    series: cum.map((c, i) => ({ step_h: i * 6, valid_time_utc: valid[i], cumulative_mm: c, interval_mm: null, interval_hours: null, temp_c: temps[i], wind_speed_ms: 2 + i })) });
+  it("uses the window from the step nearest now, 24 h long, wettest first", () => {
+    const now = Date.parse(valid[1]) + 3_600_000;                    // 07:00 -> nearest step is 06:00 (index 1)
+    const g = buildGlance([
+      { name: "Dry", lat: 1, lon: 1, p: mk([0, 0, 0, 0, 0, 0], [20, 21, 22, 23, 24, 25]) },
+      { name: "Wet", lat: 2, lon: 2, p: mk([0, 1, 3, 9, 12, 30], [20, 21, 22, 23, 24, 25]) },
+    ], meta, now)!;
+    expect(g.hours).toBe(24);
+    expect(g.startIso).toBe(valid[1]);
+    expect(g.endIso).toBe(valid[5]);
+    expect(g.rows.map((r) => r.name)).toEqual(["Wet", "Dry"]);
+    expect(g.rows[0].rain).toBe(29);                                 // cum[30h] - cum[6h] = 30 - 1
+    expect(g.rows[0].tMax).toBe(25);
+  });
+  it("shortens the window at the end of the run and returns null when under 6 h remain", () => {
+    const late = Date.parse(valid[4]) + 1000;                        // nearest step 24 h, only 6 h left
+    expect(buildGlance([{ name: "A", lat: 1, lon: 1, p: mk([0, 0, 0, 0, 1, 2], [1, 1, 1, 1, 1, 1]) }], meta, late)!.hours).toBe(6);
+    expect(buildGlance([{ name: "A", lat: 1, lon: 1, p: mk([0, 0, 0, 0, 1, 2], [1, 1, 1, 1, 1, 1]) }], meta, Date.parse(valid[5]))).toBeNull();
+  });
+});

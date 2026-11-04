@@ -85,3 +85,19 @@ def test_instant_variables_match_source_grib():
         assert s["temp_c"] == pytest.approx(raw("2t", st) - 273.15, abs=0.06)
         assert s["cloud_pct"] == pytest.approx(raw("tcc", st) * 100, abs=0.6)
         assert s["wind_speed_ms"] == pytest.approx((raw("10u", st) ** 2 + raw("10v", st) ** 2) ** 0.5, abs=0.06)
+
+
+def test_window_total_equals_source_cumulative_difference_at_wettest_cell():
+    import numpy as np
+    rid = ids[0]
+    rd = store.load_run(rid)
+    _, y, x = np.unravel_index(rd.interval_mm.argmax(), rd.interval_mm.shape)
+    lat, lon = float(rd.lats[y]), float(rd.lons[x])
+    run = Run(rid[:8], int(rid[8:]))
+    steps = rd.meta["steps_h"]
+    end = steps[min(len(steps) - 1, 16)]
+    c = TestClient(api.app)
+    w = c.get(f"/api/runs/{rid}/map?step={end}&variable=precip&kind=window&hours=24").json()
+    iy = int(np.abs(np.array(w["lats"]) - lat).argmin()); ix = int(np.abs(np.array(w["lons"]) - lon).argmin())
+    expected = _source_cum_mm(run, end, lat, lon) - _source_cum_mm(run, end - 24, lat, lon)
+    assert w["values"][iy][ix] == pytest.approx(max(expected, 0), abs=0.11)   # API rounds to 0.1 mm

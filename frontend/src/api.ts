@@ -9,7 +9,7 @@ export interface RunMeta {
   quality: { packing_noise_cells_zeroed: number; worst_packing_noise_mm: number };
   freshness: Freshness; attribution: string;
 }
-export type Kind = "interval" | "cumulative";
+export type Kind = "interval" | "cumulative" | "window";
 export type VariableId = "precip" | "temp" | "cloud" | "wind";
 export interface MapResp {
   run_id: string; step_h: number; variable: VariableId; kind: Kind | "instant"; valid_time_utc: string;
@@ -53,8 +53,8 @@ export interface Status {
 }
 export const fetchStatus = () => get<Status>("/api/status");
 export const fetchRun = () => get<RunMeta>("/api/runs/latest");
-export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind) =>
-  get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}`);
+export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind, hours = 24) =>
+  get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}${kind === "window" ? `&hours=${hours}` : ""}`);
 export const fetchPoint = (runId: string, lat: number, lon: number) =>
   get<PointResp>(`/api/runs/${runId}/point?lat=${lat}&lon=${lon}`);
 

@@ -99,3 +99,20 @@ def test_point_includes_instant_fields_with_meteorological_wind_direction(client
     s = client.get("/api/runs/latest/point?lat=37.8&lon=66.6").json()["series"][1]
     assert s["temp_c"] == 25.0 and s["cloud_pct"] == 40 and s["wind_speed_ms"] == 5.0
     assert s["wind_from_deg"] == 233      # u=4 (to the east), v=3 (to the north) => FROM south-west
+
+
+def test_window_totals_are_cumulative_differences(client):
+    # steps are [0, 3, 6]; cumulative at cell (0,0) is 0, 2, 5
+    w6 = client.get("/api/runs/latest/map?step=6&variable=precip&kind=window&hours=6").json()
+    assert w6["kind"] == "window" and w6["accumulation_hours"] == 6 and w6["values"][0][0] == 5.0
+    w3 = client.get("/api/runs/latest/map?step=6&variable=precip&kind=window&hours=3").json()
+    i3 = client.get("/api/runs/latest/map?step=6&variable=precip&kind=interval").json()
+    assert w3["values"] == i3["values"]          # a window of one step equals that interval
+
+
+@pytest.mark.parametrize("q", ["step=6&hours=4", "step=3&hours=6", "step=6&hours=9", "step=6&hours=2"])
+def test_window_rejects_hours_that_do_not_land_on_a_step(client, q):
+    r = client.get(f"/api/runs/latest/map?variable=precip&kind=window&{q}")
+    assert r.status_code == 422
+    if "hours=4" in q:
+        assert "not a forecast step" in r.json()["detail"]
