@@ -1,6 +1,8 @@
 """FastAPI backend. Serves pre-processed data only; never downloads or processes on a request."""
 from __future__ import annotations
 
+import re
+
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -35,6 +37,19 @@ app = FastAPI(
 
 # JSON grids compress ~5-10x; without this a wind field is ~840 KB over the wire.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+_RUN_PATH = re.compile(r"^/api/(runs|probability)/\d{10}/")
+
+
+@app.middleware("http")
+async def cache_headers(request, call_next):
+    """Responses addressed by an explicit run id never change for that run, so browsers/CDNs may reuse them for a while
+    (repeat clicks on the same step/place cost nothing). 'latest' and status answers must stay fresh."""
+    resp = await call_next(request)
+    if request.method == "GET" and resp.status_code == 200:
+        resp.headers.setdefault("Cache-Control", "public, max-age=900" if _RUN_PATH.match(request.url.path) else "no-cache")
+    return resp
+
 
 RunId = Path(pattern=r"^(\d{10}|latest)$", description="YYYYMMDDHH run id, or 'latest'")
 
@@ -133,8 +148,14 @@ def map_data(run_id: str = RunId,
              kind: Literal["interval", "cumulative", "window"] = Query(
                  "interval", description="Only for variable=precip: interval total, cumulative since issue, or a window total"),
              hours: int = Query(24, ge=3, le=config.MAX_STEP_H,
-                                description="Only for kind=window: length of the window in hours, ending at `step`")) -> dict:
+                                description="Only for kind=window: length of the window in hours, ending at `step`"),
+             scope: Literal["india", "world"] = Query("india", description="india = native 0.25° grid; world = coarse 2° global overview (block means)")) -> dict:
     r = _resolve(run_id)
+    if scope == "world":
+        w = store.load_world(r.meta["run_id"])
+        if w is None:
+            raise HTTPException(404, f"Run {r.meta['run_id']} has no global overview (processed before it was added).")
+        r = w
     steps = r.meta["steps_h"]
     if step not in steps:
         raise HTTPException(422, f"step {step} is not a forecast step of this run; valid: {steps}")

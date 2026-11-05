@@ -10,7 +10,17 @@ export * from "./types";
 
 export const STATIC_MODE = import.meta.env.VITE_STATIC_DATA === "1";
 
-async function get<T>(path: string): Promise<T> {
+// Identical GETs that are in flight at the same moment (e.g. a prefetch and the real request) share one network call.
+const inflight = new Map<string, Promise<unknown>>();
+function get<T>(path: string): Promise<T> {
+  const hit = inflight.get(path) as Promise<T> | undefined;
+  if (hit) return hit;
+  const p = getOnce<T>(path).finally(() => inflight.delete(path));
+  inflight.set(path, p);
+  return p;
+}
+
+async function getOnce<T>(path: string): Promise<T> {
   let r: Response;
   try { r = await fetch(path); } catch { throw new ApiError(0, "Cannot reach the forecast service."); }
   if (!r.ok) {
@@ -29,9 +39,9 @@ export const fetchStatus = (): Promise<Status> =>
   STATIC_MODE ? staticData.fetchStatus() : get<Status>("/api/status").then((s) => ({ ...s, mode: "backend" as const }));
 export const fetchRun = (): Promise<RunMeta> => (STATIC_MODE ? staticData.fetchRun() : get<RunMeta>("/api/runs/latest"));
 export const fetchRuns = (): Promise<{ runs: RunSummary[] }> => (STATIC_MODE ? staticData.fetchRuns() : get("/api/runs"));
-export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind, hours = 24): Promise<MapResp> =>
-  STATIC_MODE ? staticData.fetchMap(runId, step, variable, kind, hours)
-    : get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}${kind === "window" ? `&hours=${hours}` : ""}`);
+export const fetchMap = (runId: string, step: number, variable: VariableId, kind: Kind, hours = 24, scope: "india" | "world" = "india"): Promise<MapResp> =>
+  STATIC_MODE ? staticData.fetchMap(runId, step, variable, kind, hours, scope)
+    : get<MapResp>(`/api/runs/${runId}/map?step=${step}&variable=${variable}&kind=${kind}${kind === "window" ? `&hours=${hours}` : ""}${scope === "world" ? "&scope=world" : ""}`);
 /** `light` = rain series only. The static engine then skips downloading temperature/cloud/wind files (the run
  *  comparison needs only rain); the network API always returns everything. */
 export const fetchPoint = (runId: string, lat: number, lon: number, opts?: { light?: boolean }): Promise<PointResp> =>

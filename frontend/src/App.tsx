@@ -73,6 +73,7 @@ export default function App() {
   const [sysDark, setSysDark] = useState(() => typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches);
 
   const [mapView, setMapView] = useState<"india" | "world">("india");
+  const scope: "india" | "world" = mapView === "world" && variable !== "prob" ? "world" : "india";   // rain chances exist for India only
   const [placeLabel, setPlaceLabel] = useState("");   // name chosen in the search box; cleared when a place is picked on the map or by coordinates
   const [mapData, setMapData] = useState<MapResp | null>(null);
   // Secondary panels (all-cities overview, previous-run comparison) download many data files; wait until the map is drawn and the page has been quiet for a moment.
@@ -240,25 +241,25 @@ export default function App() {
         .finally(() => { if (alive) setMapLoading(false); });
       return () => { alive = false; };
     }
-    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}`;
+    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}|${scope}`;
     const hit = cache.current.get(key);
     if (hit) { setMapData(hit); setMapErr(null); return; }
     let live = true;
     setMapLoading(true); setMapErr(null);
-    fetchMap(meta.run_id, step, variable, kind, windowHours)
+    fetchMap(meta.run_id, step, variable, kind, windowHours, scope)
       .then((d) => { cache.current.set(key, d); if (live) setMapData(d); })
       .catch((e: Error) => { if (live) setMapErr(e.message); })
       .finally(() => { if (live) setMapLoading(false); });
     return () => { live = false; };
-  }, [meta, index, variable, kind, windowHours, retry, minIndex, probMeta, probErr, threshold]);
+  }, [meta, index, variable, kind, windowHours, retry, minIndex, probMeta, probErr, threshold, scope]);
 
   // Prefetch the next step so playback is smooth.
   useEffect(() => {
     if (!meta || variable === "prob" || index + 1 >= meta.steps_h.length) return;
     const step = meta.steps_h[index + 1];
-    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}`;
-    if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind, windowHours).then((d) => cache.current.set(key, d)).catch(() => undefined);
-  }, [meta, index, variable, kind, windowHours]);
+    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}|${scope}`;
+    if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind, windowHours, scope).then((d) => cache.current.set(key, d)).catch(() => undefined);
+  }, [meta, index, variable, kind, windowHours, scope]);
 
   useEffect(() => {
     if (!playing || !meta) return;
@@ -526,9 +527,9 @@ export default function App() {
             </Suspense>
             {mapLoading && <div className="overlay" role="status">Loading map…</div>}
             {mapErr && <div className="overlay err" role="alert">{mapErr} <button type="button" onClick={() => setRetry((r) => r + 1)}>Retry</button></div>}
-            {hover && <div className="hover" aria-hidden="true">{hover.lat.toFixed(2)}°N {hover.lon.toFixed(2)}°E · {fmtHover(hover.value)} (grid cell)</div>}
+            {hover && <div className="hover" aria-hidden="true">{hover.lat.toFixed(2)}°N {hover.lon.toFixed(2)}°E · {fmtHover(hover.value)} ({scope === "world" ? "2° average" : "grid cell"})</div>}
             <Legend scale={scale} title={legendTitle}
-              note={smooth ? "Display smoothed between 0.25° cells; the data are not finer than that." : "Raw 0.25° grid cells."} />
+              note={scope === "world" ? "World overview: each cell is the average over 2° × 2° (about 220 km), so extremes look smaller than in the India view." : smooth ? "Display smoothed between 0.25° cells; the data are not finer than that." : "Raw 0.25° grid cells."} />
           </div>
           <div className="options">
             <span className="seg small" role="group" aria-label="Map view" title="World view shows the whole globe; the forecast data still covers India only (dashed box)">

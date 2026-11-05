@@ -27,7 +27,7 @@ from pathlib import Path
 import eccodes as ec
 import numpy as np
 
-from . import config
+from . import config, world
 from .fetch import Run, fetch_run, find_latest_complete_run, published_at, raw_path
 
 log = logging.getLogger("precip.process")
@@ -262,6 +262,13 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
     if tmp.exists():
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
+    # Coarse global overview from the same global fields (see world.py). A failure here must not lose the India run.
+    try:
+        w = world.build(run, read_tp, read_field, unit_factor_to_mm, convert_instant, _check_field)
+        np.savez_compressed(tmp / "world.npz", **w["arrays"])
+        meta["world"] = w["meta"]
+    except Exception:  # noqa: BLE001
+        log.exception("world overview could not be built for %s; continuing without it", run.run_id)
     np.savez_compressed(tmp / "arrays.npz", lats=lats.astype(np.float32), lons=lons.astype(np.float32),
                         cumulative_mm=cum_mm, interval_mm=intervals.astype(np.float32),
                         temp_c=temp_c, cloud_pct=cloud_pct, u10=u10, v10=v10)

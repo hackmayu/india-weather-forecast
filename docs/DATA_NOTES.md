@@ -67,3 +67,16 @@ Source: `.../ifs/0p25/enfo/<run>-240h-enfo-ep.grib2` (+ `.index`, Range-requesta
 - Cross-check with the deterministic run: identical lat/lon grids. 0-24 h window: mean P(>=1 mm) is 87.9 %
   where the deterministic total is >= 2 mm (4,496 cells) and 0.99 % where it is < 0.1 mm (7,732 cells);
   P(>=25 mm) averages 71.6 % where the deterministic total is >= 50 mm (24 cells).
+
+## World overview layer (added 2026-11-05)
+The World view in the app shows rain, temperature, cloud and wind for the whole globe. It is derived from the same global ECMWF Open Data
+fields that are downloaded for India (no extra downloads): `backend/precip/world.py` takes the mean over 8 x 8 blocks of 0.25 deg cells, i.e. a
+2 deg grid (90 x 180). Decisions and limits:
+- Values are block MEANS. Averaging smooths extremes; a 2 deg rain cell shows much less than the 0.25 deg peak inside it. The India view stays at 0.25 deg.
+- Precipitation: means of the cumulative fields; intervals are differences of those means (linear), negatives floored at 0 as for India.
+- Wind: u and v are averaged separately; speed = hypot(mean u, mean v), the speed of the mean wind (lower than the mean speed where direction varies in a block).
+- Longitudes are converted to -180..180 and sorted before blocking (the file starts at 180 E). The single south-pole row is dropped (720 of 721 rows used).
+- No place forecasts or rain probabilities outside India; probabilities are India-only in the World view.
+- API: `GET /api/runs/{id}/map?...&scope=world`. Static files: `runs/<id>/world/*.bin`. Parity with the real API is tested (`src/world-golden.json`).
+- Data fetching (same day): run-addressed API responses carry `Cache-Control: max-age=900`; the static engine reuses `index.json` for 20 s instead of
+  re-downloading it before every request; identical in-flight GETs share one request.

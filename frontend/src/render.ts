@@ -2,7 +2,10 @@ import type { MapResp } from "./api";
 import { colorAt, type Scale } from "./colors";
 
 const CELL = 0.25; // source grid spacing (deg)
-const merc = (latDeg: number) => Math.log(Math.tan(Math.PI / 4 + (latDeg * Math.PI) / 360));
+const MERC_LAT = 85.0511;   // Web-Mercator cannot show beyond this latitude (the world layer's top/bottom rows are cut off there)
+const merc = (latDeg: number) => Math.log(Math.tan(Math.PI / 4 + (Math.max(-MERC_LAT, Math.min(MERC_LAT, latDeg)) * Math.PI) / 360));
+/** Grid spacing in degrees, read from the data (0.25 for India, 2 for the world overview). */
+export const cellOf = (d: { lats: number[]; lons: number[] }) => (d.lons.length > 1 ? Math.abs(d.lons[1] - d.lons[0]) : CELL);
 
 /**
  * Bilinear sample at fractional grid position (fy rows from north, fx cols from west), where
@@ -64,9 +67,10 @@ export interface Raster { width: number; height: number; data: Uint8ClampedArray
  */
 export function rasterize(data: MapResp, scale: Scale, smooth: boolean): Raster {
   const nlat = data.lats.length, nlon = data.lons.length;
-  const latTop = data.lats[0] + CELL / 2, latBot = data.lats[nlat - 1] - CELL / 2;
-  const lonL = data.lons[0] - CELL / 2, lonR = data.lons[nlon - 1] + CELL / 2;
-  const W = nlon * (smooth ? SMOOTH_PX_PER_CELL : RAW_PX_PER_CELL);
+  const cell = cellOf(data);
+  const latTop = Math.min(MERC_LAT, data.lats[0] + cell / 2), latBot = Math.max(-MERC_LAT, data.lats[nlat - 1] - cell / 2);
+  const lonL = Math.max(-180, data.lons[0] - cell / 2), lonR = Math.min(180, data.lons[nlon - 1] + cell / 2);
+  const W = nlon * (cell >= 1 ? 8 : smooth ? SMOOTH_PX_PER_CELL : RAW_PX_PER_CELL);   // coarse world cells get more pixels so their edges stay soft
   const xSpan = ((lonR - lonL) * Math.PI) / 180;
   const ySpan = merc(latTop) - merc(latBot);
   const H = Math.round((W * ySpan) / xSpan);
@@ -77,7 +81,7 @@ export function rasterize(data: MapResp, scale: Scale, smooth: boolean): Raster 
   // interpolation positions: computed once per column / row instead of once per pixel
   const colX0 = new Int32Array(W), colX1 = new Int32Array(W), colT = new Float64Array(W);
   for (let px = 0; px < W; px++) {
-    const fx = (lonL + ((px + 0.5) / W) * (lonR - lonL) - data.lons[0]) / CELL;
+    const fx = (lonL + ((px + 0.5) / W) * (lonR - lonL) - data.lons[0]) / cell;
     if (smooth) {
       const x = Math.min(nlon - 1, Math.max(0, fx)), x0 = Math.floor(x);
       colX0[px] = x0; colX1[px] = Math.min(nlon - 1, x0 + 1); colT[px] = x - x0;
@@ -87,7 +91,7 @@ export function rasterize(data: MapResp, scale: Scale, smooth: boolean): Raster 
   for (let py = 0; py < H; py++) {
     const m = merc(latTop) - ((py + 0.5) / H) * ySpan;
     const lat = (2 * Math.atan(Math.exp(m)) - Math.PI / 2) * (180 / Math.PI);
-    const fy = (data.lats[0] - lat) / CELL; // fractional row, cell centres at integers
+    const fy = (data.lats[0] - lat) / cell; // fractional row, cell centres at integers
     if (smooth) {
       const y = Math.min(nlat - 1, Math.max(0, fy)), y0 = Math.floor(y);
       rowY0[py] = y0; rowY1[py] = Math.min(nlat - 1, y0 + 1); rowT[py] = y - y0;
@@ -125,13 +129,14 @@ export function rasterToBlob(r: Raster): Promise<Blob> {
  */
 export function windArrows(data: MapResp, stride = 4): GeoJSON.Feature<GeoJSON.MultiLineString> {
   const lines: [number, number][][] = [];
+  const unit = stride * cellOf(data);        // degrees between arrows: 1 for India (stride 4 x 0.25), 4 for the world layer (stride 2 x 2)
   if (data.u && data.v) {
     for (let y = Math.floor(stride / 2); y < data.lats.length; y += stride) {
       for (let x = Math.floor(stride / 2); x < data.lons.length; x += stride) {
         const u = data.u[y][x], v = data.v[y][x], sp = Math.hypot(u, v);
         if (sp < 1) continue;
         const lat = data.lats[y], lon = data.lons[x];
-        const len = 0.45 + (Math.min(sp, 15) / 15) * 0.55;            // 0.45-1.0 deg of longitude on screen (grid stride is 1 deg)
+        const len = (0.45 + (Math.min(sp, 15) / 15) * 0.55) * unit;   // 0.45-1.0 x the arrow spacing, so arrows never overlap
         const ang = Math.atan2(u, v);                                 // bearing the air moves TOWARD (rad from north)
         const tip = (a: number, l: number): [number, number] => [lon + l * Math.sin(a), lat + l * Math.cos(a) * Math.cos((lat * Math.PI) / 180)];
         const tail: [number, number] = [lon - 0.5 * len * Math.sin(ang), lat - 0.5 * len * Math.cos(ang) * Math.cos((lat * Math.PI) / 180)];

@@ -183,3 +183,25 @@ describe("light place fetch (used for the previous-run comparison)", () => {
     } finally { globalThis.fetch = real; }
   });
 });
+
+import worldGolden from "./world-golden.json";
+describe("world overview (2 degree block means)", () => {
+  const WG = worldGolden as unknown as { run_id: string; cells: [number, number][]; cases: { params: Record<string, string | number>; lats: number[]; lons: number[]; units: string; values: number[]; u: number[] | null }[] };
+  for (const c of WG.cases) {
+    it(`matches the real API: ${JSON.stringify(c.params)}`, async () => {
+      const p = c.params;
+      const m = await fetchMap(WG.run_id, p.step as number, p.variable as "precip", (p.kind as "interval") ?? "interval", (p.hours as number) ?? 24, "world");
+      expect([m.lats[0], m.lats[m.lats.length - 1], m.lats.length]).toEqual(c.lats);
+      expect([m.lons[0], m.lons[m.lons.length - 1], m.lons.length]).toEqual(c.lons);
+      expect(m.units).toBe(c.units);
+      WG.cells.forEach(([r, k], i) => {
+        expect(near(m.values[r][k], c.values[i], 1e-6)).toBe(true);
+        if (c.u) expect(near(m.u![r][k], c.u[i], 0.101)).toBe(true);   // files store 0.01 m/s, so a 0.1 rounding boundary can flip (same rule as the India parity tests)
+      });
+    });
+  }
+  it("india scope is unchanged by the new parameter", async () => {
+    const a = await fetchMap(WG.run_id, 24, "temp", "interval", 24);
+    expect(a.lats.length).toBeGreaterThan(100);
+  });
+});

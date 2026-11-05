@@ -7,7 +7,7 @@ import type { MapResp, PointResp, ProbMapResp, ProbMeta, ProbPointResp, RunMeta,
 
 let BASE = "data/";
 /** Test hook / custom hosting: where the exported files live (must end with "/"). */
-export function setDataBase(base: string): void { BASE = base; cache.clear(); }
+export function setDataBase(base: string): void { BASE = base; cache.clear(); indexP = null; }
 
 const cache = new Map<string, Promise<unknown>>();
 function memo<T>(key: string, load: () => Promise<T>): Promise<T> {
@@ -36,11 +36,24 @@ async function getBin(path: string): Promise<ArrayBuffer> {
 interface IndexRun { run_id: string; issue_time_utc: string; published_at_utc?: string | null; max_step_h?: number }
 interface Index { generated_at_utc: string; scheduled_refresh: boolean; refresh_minutes: number | null; runs: IndexRun[]; probability: IndexRun[] }
 type Encoding = { dtype: string; shape: number[]; scale: number };
-type StaticRunMeta = Omit<RunMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; model: string };
+type StaticRunMeta = Omit<RunMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; model: string;
+  world?: { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; spacing_deg: number } };
 type StaticProbMeta = Omit<ProbMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; scale: number;
   domain: RunMeta["domain"]; units: string };
 
-const getIndex = () => getJson<Index>("index.json", true);
+// index.json must stay fresh (it announces new runs) but every map/place request needs it to find the run files.
+// Re-downloading it for each click added a network round trip to every interaction; reuse it for 20 s instead.
+// The status poll (every 45 s) passes force=true, so a new run is still noticed promptly.
+let indexAt = 0, indexP: Promise<Index> | null = null;
+const INDEX_TTL_MS = 20_000;
+const getIndex = (force = false): Promise<Index> => {
+  if (!force && indexP && Date.now() - indexAt < INDEX_TTL_MS) return indexP;
+  indexAt = Date.now();
+  const p = getJson<Index>("index.json", true);
+  indexP = p;
+  p.catch(() => { if (indexP === p) indexP = null; });
+  return p;
+};
 
 const STALE_H = 18, STALE_PROB_H = 36;
 function freshness(issueIso: string, staleH: number) {
@@ -92,7 +105,7 @@ function grid(a: Arr, offset: number, H: number, W: number, f: (v: number) => nu
 
 // ---- status, runs, metadata ---------------------------------------------------------------------
 export async function fetchStatus(): Promise<Status> {
-  const idx = await getIndex();
+  const idx = await getIndex(true);
   return {
     refreshing: false, last_attempt_utc: idx.generated_at_utc, last_result: "static_build", last_error: null,
     auto_refresh: idx.scheduled_refresh, latest_run: idx.runs[0]?.run_id ?? null, mode: "static",
@@ -117,15 +130,19 @@ export async function fetchRun(): Promise<RunMeta> {
 }
 
 // ---- maps ---------------------------------------------------------------------------------------
-export async function fetchMap(runId: string, step: number, variable: VariableId, kind: Kind, hours = 24): Promise<MapResp> {
+export async function fetchMap(runId: string, step: number, variable: VariableId, kind: Kind, hours = 24, scope: "india" | "world" = "india"): Promise<MapResp> {
   if (variable === "prob") throw new ApiError(422, "Use the probability endpoints for variable=prob.");
   const m = await resolveRun(runId);
   const steps = m.steps_h;
   if (!Number.isInteger(step) || step < 0 || step > 144) throw new ApiError(422, "Input should be between 0 and 144.");
   if (!steps.includes(step)) throw new ApiError(422, `step ${step} is not a forecast step of this run; valid: ${pyList(steps)}`);
   const i = steps.indexOf(step);
-  const H = m.lats.length, W = m.lons.length;
-  const out = { run_id: m.run_id, step_h: step, variable, valid_time_utc: m.valid_times_utc[i], lats: m.lats, lons: m.lons };
+  // scope=world: the coarse 2 deg global overview files (runs/<id>/world/*), same rules, different grid.
+  if (scope === "world" && !m.world) throw new ApiError(404, `Run ${m.run_id} has no global overview (processed before it was added).`);
+  const g = scope === "world" ? m.world! : m;
+  const runArr = (_m: StaticRunMeta, file: string) => scope === "world" ? loadArray("runs", m.run_id, "world/" + file, g.encodings[file]) : loadArray("runs", m.run_id, file, g.encodings[file]);
+  const H = g.lats.length, W = g.lons.length;
+  const out = { run_id: m.run_id, step_h: step, variable, valid_time_utc: m.valid_times_utc[i], lats: g.lats, lons: g.lons };
 
   if (variable === "precip") {
     if (kind === "window") {
@@ -153,14 +170,14 @@ export async function fetchMap(runId: string, step: number, variable: VariableId
   const base = { ...out, kind: "instant" as const, accumulation_hours: 0 };
   if (variable === "temp") {
     const arr = await runArr(m, "temp.bin");
-    return { ...base, units: "°C", values: grid(arr, i * H * W, H, W, (v) => v / m.encodings["temp.bin"].scale) };
+    return { ...base, units: "°C", values: grid(arr, i * H * W, H, W, (v) => v / g.encodings["temp.bin"].scale) };
   }
   if (variable === "cloud") {
     const arr = await runArr(m, "cloud.bin");
     return { ...base, units: "%", values: grid(arr, i * H * W, H, W, (v) => v) };
   }
   const [ua, va] = await Promise.all([runArr(m, "u.bin"), runArr(m, "v.bin")]);
-  const sc = m.encodings["u.bin"].scale;
+  const sc = g.encodings["u.bin"].scale;
   const speed = grid(ua, i * H * W, H, W, () => 0);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const k = i * H * W + y * W + x;

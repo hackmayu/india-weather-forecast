@@ -10,6 +10,7 @@ Layout under <out>/:
   runs/<run_id>/temp.bin           int16    degC x10
   runs/<run_id>/cloud.bin          uint8    per cent
   runs/<run_id>/{u,v}.bin          int16    m/s x100
+  runs/<run_id>/world/*.bin        same six files for the coarse 2 deg global overview (meta.json -> world.encodings)
   prob/<run_id>/meta.json, prob.bin  uint16 tenths of a per cent (windows, thresholds, nlat, nlon)
 All binary files are little-endian, row 0 = northern edge, no header (shapes are in meta.json).
 
@@ -66,6 +67,19 @@ def export_run(src: Path, out: Path) -> dict:
     meta = {k: v for k, v in meta.items() if k != "raw_sha256"}
     meta.update(lats=[round(float(x), 4) for x in lats], lons=[round(float(x), 4) for x in lons],
                 encodings=enc, format=FORMAT_VERSION)
+    if (src / "world.npz").exists() and "world" in meta:        # coarse 2 deg global overview (world.py)
+        with np.load(src / "world.npz") as w:
+            wd = dst / "world"
+            wenc = {
+                "cum.bin": {**_write(wd / "cum.bin", w["cumulative_mm"], "<f4"), "scale": 1},
+                "interval.bin": {**_write(wd / "interval.bin", w["interval_mm"], "<f4"), "scale": 1},
+                "temp.bin": {**_write(wd / "temp.bin", np.rint(w["temp_c"] * 10), "<i2"), "scale": 10},
+                "cloud.bin": {**_write(wd / "cloud.bin", np.rint(w["cloud_pct"]), "u1"), "scale": 1},
+                "u.bin": {**_write(wd / "u.bin", np.rint(w["u10"] * 100), "<i2"), "scale": 100},
+                "v.bin": {**_write(wd / "v.bin", np.rint(w["v10"] * 100), "<i2"), "scale": 100},
+            }
+            meta["world"].update(lats=[round(float(x), 4) for x in w["lats"]], lons=[round(float(x), 4) for x in w["lons"]],
+                                 encodings=wenc)
     (dst / "meta.json").write_text(json.dumps(meta, separators=(",", ":")))
     return meta
 

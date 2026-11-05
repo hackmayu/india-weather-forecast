@@ -53,6 +53,26 @@ def _load(run_id: str, mtime: float) -> RunData:  # mtime in the key invalidates
         return RunData(load_meta(run_id), z["lats"], z["lons"], z["cumulative_mm"], z["interval_mm"], **opt)
 
 
+@lru_cache(maxsize=2)
+def _load_world(run_id: str, mtime: float) -> RunData | None:
+    f = processed_dir() / run_id / "world.npz"
+    if not f.exists():
+        return None
+    with np.load(f) as z:
+        return RunData(load_meta(run_id), z["lats"], z["lons"], z["cumulative_mm"], z["interval_mm"],
+                       z["temp_c"], z["cloud_pct"], z["u10"], z["v10"])
+
+
+def load_world(run_id: str) -> RunData | None:
+    """Coarse global layer of a run (2 deg block means, see world.py), or None if the run has none."""
+    if not RUN_ID_RE.match(run_id):
+        raise KeyError(run_id)
+    meta_path = processed_dir() / run_id / "meta.json"
+    if not meta_path.exists():
+        raise KeyError(run_id)
+    return _load_world(run_id, meta_path.stat().st_mtime)
+
+
 def load_run(run_id: str) -> RunData:
     if not RUN_ID_RE.match(run_id):
         raise KeyError(run_id)
