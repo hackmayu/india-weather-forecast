@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import golden from "./golden.json";
-import { fetchMap, fetchPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, setDataBase } from "./staticData";
+import { fetchMap, fetchPoint, fetchWorldPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, setDataBase } from "./staticData";
 import { ApiError } from "./types";
 
 const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../static-data");
@@ -16,7 +16,7 @@ beforeAll(() => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^data\//, "");
     try {
-      if (hideW50 && path.includes("/w50/")) throw new Error("hidden");
+      if (hideW50 && (path.includes("/w50/") || path.includes("/wt/"))) throw new Error("hidden");
       const buf = readFileSync(resolve(dataDir, path));
       return {
         ok: true, status: 200,
@@ -238,5 +238,45 @@ describe("detailed 0.5 degree world (per-step files; present only after a local 
     const wind = await fetchMap(worldGolden.run_id, 24, "wind", "interval", 24, "world");
     expect(wind.u && wind.v).toBeTruthy();
     expect(wind.values[100][100]).toBeCloseTo(Math.hypot(wind.u![100][100], wind.v![100][100]), 0);
+  });
+});
+
+
+describe("world-wide place forecast (1 degree tiles)", () => {
+  const rid = worldGolden.run_id;
+  const have = existsSync(resolve(dataDir, "runs", rid, "wt", "cum_0_0.bin"));
+  beforeAll(() => { hideW50 = false; setDataBase("data/"); });
+  it.skipIf(!have)("returns a full series with sane values anywhere on Earth", async () => {
+    for (const [la, lo] of [[48.86, 2.35], [-33.87, 151.21], [40.71, -74.0], [-1.29, 36.82], [64.15, -21.94], [-77.0, 160.0]]) {
+      const p = await fetchWorldPoint(rid, la, lo);
+      expect(p.world).toBe(true);
+      expect(p.series.length).toBeGreaterThan(20);
+      expect(Math.abs(p.grid_point.lat - la)).toBeLessThanOrEqual(0.51);
+      expect(Math.abs(p.grid_point.lon - lo)).toBeLessThanOrEqual(0.51);
+      let prev = -1;
+      for (const s of p.series) {
+        expect(s.cumulative_mm).toBeGreaterThanOrEqual(prev - 0.11); prev = s.cumulative_mm;   // 0.1 mm storage steps
+        if (s.interval_mm !== null) expect(s.interval_mm).toBeGreaterThanOrEqual(0);
+        expect(s.temp_c!).toBeGreaterThan(-90); expect(s.temp_c!).toBeLessThan(60);
+        expect(s.cloud_pct!).toBeGreaterThanOrEqual(0); expect(s.cloud_pct!).toBeLessThanOrEqual(100);
+        expect(s.wind_speed_ms!).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+  it.skipIf(!have)("agrees with the 0.5 degree map files (same data averaged differently)", async () => {
+    const [la, lo] = [48.86, 2.35];
+    const p = await fetchWorldPoint(rid, la, lo);
+    const i = p.series.findIndex((s) => s.step_h === 24);
+    const m = await fetchMap(rid, 24, "temp", "interval", 24, "world");
+    // the four 0.5 deg cells that make up this 1 deg cell
+    const gy = (p.grid_point.lat - m.lats[0]) / -0.5, gx = (p.grid_point.lon - m.lons[0]) / 0.5;
+    const ys = [Math.round(gy - 0.5), Math.round(gy + 0.5)], xs = [Math.round(gx - 0.5), Math.round(gx + 0.5)];
+    const mean = (ys.flatMap((y) => xs.map((x) => m.values[y][x])).reduce((a, b) => a + b, 0)) / 4;
+    expect(Math.abs(mean - p.series[i].temp_c!)).toBeLessThan(0.3);
+  });
+  it.skipIf(!have)("clear error when the tile files are not deployed", async () => {
+    hideW50 = true; setDataBase("data/");
+    await expect(fetchWorldPoint(rid, 10, 10)).rejects.toBeInstanceOf(ApiError);
+    hideW50 = false; setDataBase("data/");
   });
 });

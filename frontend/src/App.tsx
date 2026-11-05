@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, fetchMap, fetchPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type ProbMeta, type ProbPointResp, type RunMeta, type Status, type VariableId } from "./api";
+import { ApiError, fetchMap, fetchPoint, fetchWorldPoint, fetchProbMap, fetchProbMeta, fetchProbPoint, fetchRun, fetchRuns, fetchStatus, type Kind, type MapResp, type PointResp, type ProbMeta, type ProbPointResp, type RunMeta, type Status, type VariableId } from "./api";
 import { getScale, type Palette } from "./colors";
 import CityOverview from "./CityOverview";
 import Overview from "./Overview";
@@ -282,7 +282,10 @@ export default function App() {
       window.setTimeout(() => document.getElementById("place-results")?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" }), 120);
     }
     const la = Number(lat.toFixed(4)), lo = Number(lon.toFixed(4));
-    fetchPoint(meta.run_id, la, lo)
+    const d = meta.domain;
+    const inIndia = la >= d.lat_min && la <= d.lat_max && lo >= d.lon_min && lo <= d.lon_max;
+    if (!inIndia) setMapView("world");           // show the global map around a place outside India
+    (inIndia ? fetchPoint(meta.run_id, la, lo) : fetchWorldPoint(meta.run_id, la, lo))
       .then((p) => { setPoint(p); setLoc({ lat: la, lon: lo }); lsSet("lastPlace", JSON.stringify({ lat: la, lon: lo })); setLatIn(p.requested.lat.toFixed(2)); setLonIn(p.requested.lon.toFixed(2)); })
       .catch((e: Error) => { setPointErr(e.message); setPoint(null); })
       .finally(() => setPointLoading(false));
@@ -337,11 +340,8 @@ export default function App() {
     );
   };
 
-  const outside = useCallback(() => {
-    if (!meta) return;
-    const d = meta.domain;
-    setNotice(`That location is outside the forecast area (${d.lat_min}–${d.lat_max}°N, ${d.lon_min}–${d.lon_max}°E, shown dashed). No data is available there.`);
-  }, [meta]);
+  // A click outside India: show the world-wide place forecast (1 deg average cell) when the data files have it.
+  const outside = useCallback((lat: number, lon: number) => { choosePoint(lat, lon, true, ""); }, [choosePoint]);
 
   const onBasemapFailed = useCallback(() => setBasemapFailed(true), []);
 
@@ -617,7 +617,7 @@ export default function App() {
       <footer>
         <p><strong>Forecast data:</strong> Contains modified ECMWF Open Data (IFS HRES, 0.25°), licensed CC-BY-4.0. Run {meta.run_id} UTC, processed {formatTime(meta.processed_at_utc, zone)}.
           {" "}<strong>Basemap:</strong> © OpenStreetMap contributors, OpenMapTiles, served by OpenFreeMap; boundaries are as drawn by OpenStreetMap contributors.
-          {" "}<strong>Place names:</strong> <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC-BY 4.0), towns of 1,000+ people.</p>
+          {" "}<strong>Place names:</strong> <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC-BY 4.0): towns of 1,000+ people in India and the 6,000 largest other cities.</p>
         <details>
           <summary>What this forecast can and cannot tell you</summary>
           <ul>

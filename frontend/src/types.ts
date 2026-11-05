@@ -27,6 +27,8 @@ export interface SeriesPoint {
 export interface PointResp {
   run_id: string; requested: { lat: number; lon: number }; grid_point: { lat: number; lon: number };
   method: string; units: "mm"; series: SeriesPoint[];
+  /** true for a world-wide place forecast (1 deg average cell, outside India): no rain probabilities or run comparison */
+  world?: boolean;
 }
 
 export class ApiError extends Error {

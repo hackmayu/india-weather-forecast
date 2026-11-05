@@ -39,7 +39,9 @@ type Encoding = { dtype: string; shape: number[]; scale: number };
 type StaticRunMeta = Omit<RunMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; model: string;
   world?: { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; spacing_deg: number };
   /** Detailed 0.5 deg world, one file per variable and step (runs/<id>/w50/<key>_<step index>.bin). Absent on snapshot builds. */
-  world50?: { spacing_deg: number; n_lat: number; n_lon: number; lat0: number; lon0: number; encodings: Record<string, { dtype: string; scale: number; shape: number[] }> } };
+  world50?: { spacing_deg: number; n_lat: number; n_lon: number; lat0: number; lon0: number; encodings: Record<string, { dtype: string; scale: number; shape: number[] }>;
+    /** 1 deg place-forecast tiles: wt/<key>_<tile row>_<tile col>.bin, shape (steps, size, size) */
+    tiles?: { size: number; spacing_deg: number; n_lat: number; n_lon: number; steps: number; lat0: number; lon0: number; encodings: Record<string, { dtype: string; scale: number }> } } };
 type StaticProbMeta = Omit<ProbMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; scale: number;
   domain: RunMeta["domain"]; units: string };
 
@@ -231,6 +233,45 @@ async function fetchMap50(m: StaticRunMeta, i: number, step: number, variable: V
   const speed = grid(ua, 0, H, W, () => 0);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) speed[y][x] = r1(Math.hypot(ua[y * W + x] / k, va[y * W + x] / k));
   return { ...base, units: "m/s", values: speed, u: grid(ua, 0, H, W, (v) => r1(v / k)), v: grid(va, 0, H, W, (v) => r1(v / k)) };
+}
+
+// ---- world-wide place forecast (1 deg tiles) -----------------------------------------------------------------
+async function tile(m: StaticRunMeta, key: string, tr: number, tc: number): Promise<Arr> {
+  const tl = m.world50!.tiles!, enc = tl.encodings[key];
+  return memo(`wt|${m.run_id}|${key}|${tr}|${tc}`, async () => {
+    const buf = await getBin(`runs/${m.run_id}/wt/${key}_${tr}_${tc}.bin`);
+    const a = enc.dtype === "<u2" ? new Uint16Array(buf) : enc.dtype === "<i2" ? new Int16Array(buf) : new Uint8Array(buf);
+    if (a.length !== tl.steps * tl.size * tl.size) throw new ApiError(500, `Tile ${key}_${tr}_${tc} has ${a.length} values.`);
+    return a;
+  });
+}
+
+/** Place forecast anywhere on Earth from the 1 deg world tiles (about 110 km average cell; not a point measurement). */
+export async function fetchWorldPoint(runId: string, lat: number, lon: number): Promise<PointResp> {
+  const m = await resolveRun(runId);
+  const tl = m.world50?.tiles;
+  if (!tl) throw new ApiError(503, "World-wide place forecasts are not published yet (they appear after the next automatic update). India places work now.");
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90) throw new ApiError(422, "Location is not valid.");
+  const lon180 = ((((lon + 180) % 360) + 360) % 360) - 180;
+  const iy = Math.min(tl.n_lat - 1, Math.max(0, Math.round((tl.lat0 - lat) / tl.spacing_deg)));
+  const ix = Math.min(tl.n_lon - 1, Math.max(0, Math.round((lon180 - tl.lon0) / tl.spacing_deg)));
+  const n = tl.size, tr = Math.floor(iy / n), tc = Math.floor(ix / n), cell = (iy % n) * n + (ix % n);
+  const [cum, temp, cloud, ua, va] = await Promise.all(["cum", "temp", "cloud", "u", "v"].map((k) => tile(m, k, tr, tc)));
+  const per = n * n, e = tl.encodings;
+  const series: SeriesPoint[] = m.steps_h.map((s, i) => {
+    const k = i * per + cell;
+    const c = cum[k] / e.cum.scale;
+    const u = ua[k] / e.u.scale, v = va[k] / e.v.scale;
+    return {
+      step_h: s, valid_time_utc: m.valid_times_utc[i], cumulative_mm: r2(c),
+      interval_mm: i === 0 ? null : r2(Math.max(c - cum[k - per] / e.cum.scale, 0)), interval_hours: i === 0 ? null : m.interval_durations_h[i - 1],
+      temp_c: r1(temp[k] / e.temp.scale), cloud_pct: cloud[k], wind_speed_ms: r1(Math.hypot(u, v)), wind_from_deg: Math.round(windDir(u, v)) % 360,
+    };
+  });
+  return { run_id: m.run_id, requested: { lat, lon: lon180 },
+    grid_point: { lat: Math.round((tl.lat0 - iy * tl.spacing_deg) * 1e4) / 1e4, lon: Math.round((tl.lon0 + ix * tl.spacing_deg) * 1e4) / 1e4 },
+    method: "World-wide overview: average over a 1° x 1° cell (about 110 km) of the 0.25° model data; extremes are smoothed. Not a point measurement. Rain probabilities and run comparison are available for India only.",
+    units: "mm", series, world: true };
 }
 
 // ---- place series -------------------------------------------------------------------------------

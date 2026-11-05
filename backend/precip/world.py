@@ -109,3 +109,26 @@ def build50(run: Run, read_tp, read_field, unit_factor_to_mm, convert_instant, c
             "method": "mean over 0.5 deg blocks of the global 0.25 deg fields (smooths extremes a little)"}
     arrays["lats"], arrays["lons"] = lats.astype(np.float32), lons.astype(np.float32)
     return {"arrays": arrays, "meta": meta}
+
+
+# ---- 1 deg place-forecast tiles ("wt"): all steps and variables for a 30 x 30 deg area in one small file each ---------
+TILE = 30                  # tile side in 1 deg cells (= 30 deg); 6 x 12 tiles cover the globe
+
+
+def to_tiles(w50: dict) -> tuple[dict, dict]:
+    """Average the quantised 0.5 deg arrays (steps, 360, 720) to 1 deg (steps, 180, 360) and re-quantise.
+    Returns ({key: array}, meta). Averaging is done on the dequantised values, so the result equals the mean of
+    the 0.25 deg data up to the stored precision. A place forecast outside India reads one tile (all steps)."""
+    out = {}
+    for key, (dtype, scale) in W50_ENC.items():
+        a = w50[key].astype(np.float64) / scale
+        s, h, w = a.shape
+        m = a.reshape(s, h // 2, 2, w // 2, 2).mean(axis=(2, 4))
+        info = np.iinfo(np.dtype(dtype))
+        out[key] = np.clip(np.rint(m * scale), info.min, info.max).astype(dtype)
+    s, h, w = out["cum"].shape
+    if h % TILE or w % TILE:
+        raise ValueError(f"grid {h}x{w} does not divide into {TILE}-cell tiles")
+    meta = {"size": TILE, "spacing_deg": 1.0, "n_lat": h, "n_lon": w, "steps": s,
+            "lat0": round(float(w50["lats"][:2].mean()), 4), "lon0": round(float(w50["lons"][:2].mean()), 4)}
+    return out, meta

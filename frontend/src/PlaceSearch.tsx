@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { CITIES } from "./cities";
 
-export type Place = { name: string; state: string; lat: number; lon: number; pop: number };
+/** `state` holds the Indian state, or the country for world places (`world: true`). */
+export type Place = { name: string; state: string; lat: number; lon: number; pop: number; world?: boolean };
 
 let cache: Promise<Place[]> | null = null;
-/** Loads the offline gazetteer (GeoNames, towns >= 1000 people) once, on first use. Falls back to the built-in big cities. */
+async function loadRows(file: string): Promise<[string, string, number, number, number][]> {
+  const r = await fetch(`${import.meta.env.BASE_URL}${file}`);
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json();
+}
+/** Loads the offline gazetteers once: India (GeoNames, towns >= 1000 people) and the 6,000 largest other cities of the world.
+ *  Falls back to the built-in big cities if the files cannot be fetched. */
 export function loadPlaces(): Promise<Place[]> {
-  cache ??= fetch(`${import.meta.env.BASE_URL}places.json`)
-    .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json() as Promise<[string, string, number, number, number][]>; })
-    .then((rows) => rows.map(([name, state, lat, lon, pop]) => ({ name, state, lat, lon, pop })))
+  cache ??= Promise.all([loadRows("places.json"), loadRows("worldplaces.json").catch(() => [])])
+    .then(([india, other]) => [
+      ...india.map(([name, state, lat, lon, pop]): Place => ({ name, state, lat, lon, pop })),
+      ...other.map(([name, state, lat, lon, pop]): Place => ({ name, state, lat, lon, pop, world: true })),
+    ].sort((a, b) => b.pop - a.pop))
     .catch(() => { cache = null; return CITIES.map((c) => ({ name: c.name, state: "", lat: c.lat, lon: c.lon, pop: 1 })); });
   return cache;
 }
@@ -91,10 +100,10 @@ export default function PlaceSearch({ onPick }: { onPick: (p: Place) => void }) 
   const typed = q.trim().length >= 2;
   const [recent, setRecent] = useState<Place[]>(readRecent);
   const list = useRef<HTMLUListElement>(null);
-  const results = places ? (typed ? searchPlaces(places, q, 10) : [...recent, ...places.filter((p) => !recent.some((r) => r.name === p.name && r.state === p.state)).slice(0, 8 - Math.min(recent.length, 3))].slice(0, 8)) : [];   // places are sorted by population: the first ones are the biggest cities
-  const states = places ? [...new Set(places.map((p) => p.state).filter(Boolean))].sort() : [];
+  const results = places ? (typed ? searchPlaces(places, q, 10) : [...recent, ...places.filter((p) => !p.world && !recent.some((r) => r.name === p.name && r.state === p.state)).slice(0, 8 - Math.min(recent.length, 3))].slice(0, 8)) : [];   // places are sorted by population: the first ones are the biggest cities
+  const states = places ? [...new Set(places.filter((p) => !p.world).map((p) => p.state).filter(Boolean))].sort() : [];
   const [state, setState] = useState("");
-  const inState = places && state ? places.filter((p) => p.state === state).slice(0, 60) : [];
+  const inState = places && state ? places.filter((p) => !p.world && p.state === state).slice(0, 60) : [];
 
   useEffect(() => {   // fetch the place list shortly after the page settles so the state menu is filled when first opened
     const id = window.setTimeout(() => void loadPlaces().then(setPlaces), 2500);
@@ -119,16 +128,16 @@ export default function PlaceSearch({ onPick }: { onPick: (p: Place) => void }) 
 
   return (
     <div className="placesearch" ref={box}>
-      <label>Search any town or city in India
+      <label>Search any place
         <input role="combobox" aria-expanded={open && results.length > 0} aria-controls="place-listbox" aria-autocomplete="list"
-          value={q} placeholder="e.g. Pune, or a small town" autoComplete="off"
+          value={q} placeholder="Pune, a small town, or Paris" autoComplete="off"
           onFocus={() => { setOpen(true); void loadPlaces().then(setPlaces); }}
           onChange={(e) => { setQ(e.target.value); setOpen(true); setActive(0); }} onKeyDown={onKey} />
       </label>
       {open && (
         <ul id="place-listbox" role="listbox" className="placelist" ref={list}>
           {!places && <li className="muted">Loading places…</li>}
-          {places && !typed && <li className="muted hdr">{recent.length ? "Recent and biggest cities" : "Biggest cities"} (type to find any of {places.length.toLocaleString()} towns)</li>}
+          {places && !typed && <li className="muted hdr">{recent.length ? "Recent and biggest cities" : "Biggest cities"} (type to find any of {places.length.toLocaleString()} places)</li>}
           {places && typed && results.length === 0 && <li className="muted">No match. Try the spelling, or pick on the map.</li>}
           {results.map((p, i) => (
             <li key={`${p.name}-${p.lat}-${p.lon}`} role="option" aria-selected={i === active}

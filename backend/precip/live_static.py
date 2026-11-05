@@ -107,6 +107,7 @@ def build(out: Path, previous: Path | None, force: bool = False, scheduled_minut
         d = out / "runs" / e["run_id"]
         if (d / "w50").is_dir():
             shutil.rmtree(d / "w50")
+            shutil.rmtree(d / "wt", ignore_errors=True)
             m = json.loads((d / "meta.json").read_text())
             m.pop("world50", None)
             (d / "meta.json").write_text(json.dumps(m, separators=(",", ":")))

@@ -10,6 +10,7 @@ Layout under <out>/:
   runs/<run_id>/temp.bin           int16    degC x10
   runs/<run_id>/cloud.bin          uint8    per cent
   runs/<run_id>/{u,v}.bin          int16    m/s x100
+  runs/<run_id>/wt/*.bin           1 deg place-forecast tiles (world.to_tiles), newest run only, with the w50 files
   runs/<run_id>/world/*.bin        same six files for the coarse 2 deg global overview (meta.json -> world.encodings)
   prob/<run_id>/meta.json, prob.bin  uint16 tenths of a per cent (windows, thresholds, nlat, nlon)
 All binary files are little-endian, row 0 = northern edge, no header (shapes are in meta.json).
@@ -81,6 +82,7 @@ def export_run(src: Path, out: Path, w50: bool = False) -> dict:
             meta["world"].update(lats=[round(float(x), 4) for x in w["lats"]], lons=[round(float(x), 4) for x in w["lons"]],
                                  encodings=wenc)
     shutil.rmtree(dst / "w50", ignore_errors=True)
+    shutil.rmtree(dst / "wt", ignore_errors=True)
     if w50 and (src / "world50.npz").exists() and "world50" in meta:
         # Detailed 0.5 deg world: ONE SMALL FILE PER VARIABLE AND STEP (runs/<id>/w50/<key>_<step index>.bin, 360 x 720),
         # so the browser downloads only the time step it shows (about 0.3-1 MB each) instead of a whole 100 MB cube.
@@ -92,6 +94,19 @@ def export_run(src: Path, out: Path, w50: bool = False) -> dict:
                     _write(dst / "w50" / f"{key}_{i}.bin", a[i], dtype)
                 wenc[key] = {"dtype": dtype, "scale": scale, "shape": [int(a.shape[1]), int(a.shape[2])]}
             meta["world50"]["encodings"] = wenc
+            # 1 deg place-forecast tiles: wt/<key>_<tile row>_<tile col>.bin, shape (steps, 30, 30)
+            try:
+                tiles, tmeta = world.to_tiles({k: z[k] for k in list(world.W50_ENC) + ["lats", "lons"]})
+            except ValueError:            # grid not tileable (only happens with synthetic test grids)
+                tiles = tmeta = None
+            if tmeta:
+                n = tmeta["size"]
+                for key, (dtype, scale) in world.W50_ENC.items():
+                    for tr in range(tmeta["n_lat"] // n):
+                        for tc in range(tmeta["n_lon"] // n):
+                            _write(dst / "wt" / f"{key}_{tr}_{tc}.bin", tiles[key][:, tr * n:(tr + 1) * n, tc * n:(tc + 1) * n], dtype)
+                tmeta["encodings"] = {k: {"dtype": d, "scale": s} for k, (d, s) in world.W50_ENC.items()}
+                meta["world50"]["tiles"] = tmeta
     else:
         meta.pop("world50", None)
     (dst / "meta.json").write_text(json.dumps(meta, separators=(",", ":")))

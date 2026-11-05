@@ -111,8 +111,9 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
   const cmp = prev ? compareRuns(point, prev.point) : null;
   const head = placeHeadline(s, nowMs);
   const city = nearCity(point.grid_point.lat, point.grid_point.lon, 0.5);
-  const gridText = `${point.grid_point.lat.toFixed(2)}°N, ${point.grid_point.lon.toFixed(2)}°E`;
-  const placeName = label ? label : city ? `${city.name} area` : `${point.grid_point.lat.toFixed(2)}°N, ${point.grid_point.lon.toFixed(2)}°E`;
+  const ns = (v: number) => `${Math.abs(v).toFixed(2)}°${v < 0 ? "S" : "N"}`, ew = (v: number) => `${Math.abs(v).toFixed(2)}°${v < 0 ? "W" : "E"}`;
+  const gridText = `${ns(point.grid_point.lat)}, ${ew(point.grid_point.lon)}`;
+  const placeName = label ? label : city ? `${city.name} area` : gridText;
   const blocks = dailyBlocks(s);
   const download = () => {
     const blob = new Blob([toCsv(point, meta, new Date().toISOString())], { type: "text/csv;charset=utf-8" });
@@ -128,7 +129,7 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
     <section className="panel" aria-live="polite" aria-busy={loading}>
       <div className="place-head">
         <h2>{placeName}</h2>
-        {(label || city) && <p className="muted gridnote">Forecast for the nearest 0.25° cell ({gridText}), about 28 km wide.</p>}
+        {(label || city || point.world) && <p className="muted gridnote">{point.world ? `World average cell centred at ${gridText}, about 110 km wide (1° × 1°).` : `Forecast for the nearest 0.25° cell (${gridText}), about 28 km wide.`}</p>}
         <button type="button" className="link backtomap" onClick={onBack}>↑ Back to the map</button>
       </div>
       {head && (
@@ -145,7 +146,7 @@ export default function LocationPanel({ meta, point, loading, error, index, zone
           )}
         </div>
       )}
-      {head && <p className="muted small">{formatTime(s[head.startIdx].valid_time_utc, zone)} → {formatTime(s[head.endIdx].valid_time_utc, zone)} · model forecast for the nearest 0.25° cell ({point.grid_point.lat.toFixed(2)}°N, {point.grid_point.lon.toFixed(2)}°E), not an observation.</p>}
+      {head && <p className="muted small">{formatTime(s[head.startIdx].valid_time_utc, zone)} → {formatTime(s[head.endIdx].valid_time_utc, zone)} · {point.world ? `model forecast averaged over a 1° cell (${gridText})` : `model forecast for the nearest 0.25° cell (${gridText})`}, not an observation.</p>}
       <Chart title="Precipitation in each interval (mm per interval)" unit="mm" series={s} values={s.map((p) => p.interval_mm)} kind="bar" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
       <Chart title="Cumulative precipitation since issue time (mm)" unit="mm" series={s} values={s.map((p) => p.cumulative_mm)} kind="line" index={index} onIndex={onIndex} zone={zone} nowFrac={nowFrac} />
 

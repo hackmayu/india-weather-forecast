@@ -139,3 +139,19 @@ def test_export_writes_one_file_per_variable_and_step(tmp_path):
     assert m["world50"]["encodings"]["temp"] == {"dtype": "<i2", "scale": 10, "shape": [4, 6]}
     m2 = export_static.export_run(src, out, w50=False)          # an older run: files and metadata are dropped again
     assert "world50" not in m2 and not d.exists()
+
+
+def test_to_tiles_averages_to_one_degree_and_keeps_units():
+    from precip.world import W50_ENC, to_tiles
+    s, h, w = 2, 360, 720
+    arrays = {k: np.zeros((s, h, w), dtype=dt) for k, (dt, _) in W50_ENC.items()}
+    arrays["temp"][:, :2, :2] = np.array([[100, 200], [300, 400]], dtype="<i2")     # one 1 deg block: mean 250 (25.0 degC)
+    arrays["cum"][1, 2:4, 2:4] = 50                                                # 5.0 mm in the next block
+    arrays["lats"] = (90 - 0.25 - 0.5 * np.arange(h)).astype("float32")
+    arrays["lons"] = (-180 + 0.25 + 0.5 * np.arange(w)).astype("float32")
+    tiles, meta = to_tiles(arrays)
+    assert tiles["temp"].shape == (s, 180, 360) and tiles["temp"][0, 0, 0] == 250 and tiles["temp"][0, 0, 1] == 0
+    assert tiles["cum"][1, 1, 1] == 50 and tiles["cum"][0, 1, 1] == 0
+    assert meta["size"] == 30 and meta["n_lat"] == 180 and meta["lat0"] == pytest.approx(89.5) and meta["lon0"] == pytest.approx(-179.5)
+    with pytest.raises(ValueError):
+        to_tiles({**arrays, **{k: v[:, :10, :20] for k, v in arrays.items() if k in W50_ENC}})

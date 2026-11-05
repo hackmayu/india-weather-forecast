@@ -215,6 +215,11 @@ export default function MapView(props: Props) {
     if (!marker) { mk.current?.remove(); mk.current = null; return; }
     if (!mk.current) mk.current = new maplibregl.Marker({ color: "#c2410c" }).setLngLat([marker.lon, marker.lat]).addTo(m);
     else mk.current.setLngLat([marker.lon, marker.lat]);
+    const d = latest.current.meta.domain;      // a place outside India: bring it into view
+    if (marker.lat < d.lat_min || marker.lat > d.lat_max || marker.lon < d.lon_min || marker.lon > d.lon_max) {
+      const calm = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      m.easeTo({ center: [marker.lon, marker.lat], zoom: Math.max(m.getZoom(), 3.2), duration: calm ? 0 : 900 });
+    }
   }, [marker]);
 
   return <div ref={box} className="map" role="application" aria-label="Weather map of India. Click to select a location, or use the location controls." />;

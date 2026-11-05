@@ -35,6 +35,11 @@ async function getOnce<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+/** World-wide place forecast (1 deg average). Only the static data files carry it; the FastAPI service answers for India. */
+export const fetchWorldPoint = (runId: string, lat: number, lon: number): Promise<PointResp> =>
+  STATIC_MODE ? staticData.fetchWorldPoint(runId, lat, lon)
+    : Promise.reject(new ApiError(404, "World-wide place forecasts are available on the static site only. Pick a place inside India here."));
+
 export const fetchStatus = (): Promise<Status> =>
   STATIC_MODE ? staticData.fetchStatus() : get<Status>("/api/status").then((s) => ({ ...s, mode: "backend" as const }));
 export const fetchRun = (): Promise<RunMeta> => (STATIC_MODE ? staticData.fetchRun() : get<RunMeta>("/api/runs/latest"));
