@@ -253,12 +253,15 @@ export default function App() {
     return () => { live = false; };
   }, [meta, index, variable, kind, windowHours, retry, minIndex, probMeta, probErr, threshold, scope]);
 
-  // Prefetch the next step so playback is smooth.
+  // Prefetch the next two steps (and the previous one) so stepping and playback never wait for the network.
   useEffect(() => {
-    if (!meta || variable === "prob" || index + 1 >= meta.steps_h.length) return;
-    const step = meta.steps_h[index + 1];
-    const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}|${scope}`;
-    if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind, windowHours, scope).then((d) => cache.current.set(key, d)).catch(() => undefined);
+    if (!meta || variable === "prob") return;
+    for (const j of [index + 1, index + 2, index - 1]) {
+      if (j < 0 || j >= meta.steps_h.length) continue;
+      const step = meta.steps_h[j];
+      const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}|${scope}`;
+      if (!cache.current.has(key)) fetchMap(meta.run_id, step, variable, kind, windowHours, scope).then((d) => cache.current.set(key, d)).catch(() => undefined);
+    }
   }, [meta, index, variable, kind, windowHours, scope]);
 
   useEffect(() => {

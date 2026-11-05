@@ -4,6 +4,8 @@ import type { MapResp, RunMeta, VariableId } from "./api";
 import type { Scale } from "./colors";
 import { fallbackStyle } from "./fallbackStyle";
 import { arrowStride, cellOf, rasterize, rasterToBlob, windArrows } from "./render";
+import { loadPlaces } from "./PlaceSearch";
+import { WORLD_CITIES } from "./worldCities";
 
 const CELL = 0.25;
 // Hosted vector basemaps from OpenFreeMap (no key, no cookies; OSM data, attribution shown on the map).
@@ -39,6 +41,22 @@ interface Props {
   view?: "india" | "world";   // world = zoom out to the whole globe (the forecast overlay still covers India only)
 }
 
+interface LabelPlace { name: string; lat: number; lon: number; z: number; rank: number }
+/** Forecast numbers printed next to place names. A value is the model's value for the grid cell that contains the place. */
+function labelFeatures(d: MapResp, india: LabelPlace[]): GeoJSON.FeatureCollection {
+  const cell = cellOf(d), world = cell >= 0.5;
+  const list: LabelPlace[] = world ? WORLD_CITIES.map((c, i) => ({ ...c, rank: i, z: i < 16 ? 0 : i < 40 ? 1.8 : 2.8 })) : india;
+  const features: GeoJSON.Feature[] = [];
+  for (const p of list) {
+    const iy = Math.round((d.lats[0] - p.lat) / cell), ix = Math.round((p.lon - d.lons[0]) / cell);
+    const v = d.values[iy]?.[ix];
+    if (v === undefined || !Number.isFinite(v)) continue;
+    const num = d.units === "°C" ? `${Math.round(v)}°` : d.units === "%" ? `${Math.round(v)}%` : d.units === "mm" ? (v < 0.05 ? "0 mm" : `${v.toFixed(1)} mm`) : `${v.toFixed(1)} m/s`;
+    features.push({ type: "Feature", properties: { text: `${p.name}\n${num}`, z: p.z, rank: p.rank }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 export default function MapView(props: Props) {
   const { data, scale, smooth, basemap, dark, marker } = props;
   const box = useRef<HTMLDivElement>(null);
@@ -50,6 +68,7 @@ export default function MapView(props: Props) {
   latest.current = props;
   const firstStyle = useRef(true);
 
+  const indiaLabels = useRef<LabelPlace[]>([]);   // biggest ~450 Indian towns, loaded after the page settles
   const paintSeq = useRef(0);                         // a newer paint supersedes an older one still encoding
   const blobUrls = useRef<{ A?: string; B?: string }>({});
 
@@ -59,6 +78,7 @@ export default function MapView(props: Props) {
     if (!m || !ready.current || !d) return;
     const seq = ++paintSeq.current;
     const raster = rasterize(d, sc, sm);
+    (m.getSource("labels") as maplibregl.GeoJSONSource | undefined)?.setData(labelFeatures(d, indiaLabels.current));
     const wind = m.getSource("wind") as maplibregl.GeoJSONSource | undefined;
     wind?.setData(latest.current.variable === "wind" ? windArrows(d, arrowStride(cellOf(d))) : { type: "FeatureCollection", features: [] });
     rasterToBlob(raster).then((blob) => {
@@ -103,6 +123,12 @@ export default function MapView(props: Props) {
     m.addSource("domain", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString",
       coordinates: [[dm.lon_min, dm.lat_min], [dm.lon_max, dm.lat_min], [dm.lon_max, dm.lat_max], [dm.lon_min, dm.lat_max], [dm.lon_min, dm.lat_min]] } } });
     m.addLayer({ id: "domain", type: "line", source: "domain", paint: { "line-color": "#1f2937", "line-width": 1.2, "line-dasharray": [3, 2] } });
+    if (m.getStyle().glyphs) {   // the bundled offline fallback style has no fonts, so no number labels there
+      m.addSource("labels", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      m.addLayer({ id: "labels", type: "symbol", source: "labels", filter: ["<=", ["get", "z"], ["zoom"]],
+        layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Bold"], "text-size": 11, "text-anchor": "center", "symbol-sort-key": ["get", "rank"], "text-padding": 3 },
+        paint: { "text-color": "#111827", "text-halo-color": "rgba(255,255,255,0.92)", "text-halo-width": 1.6 } });
+    }
     active.current = "B"; // first paint goes into A
     ready.current = true;
     paint();
@@ -152,6 +178,18 @@ export default function MapView(props: Props) {
     map.current = m;
     if (location.search.includes("debug")) (window as unknown as { __map: unknown }).__map = m; // inspection hook, opt-in only
     return () => { window.clearTimeout(timer); m.remove(); map.current = null; ready.current = false; mk.current = null; };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    const id = window.setTimeout(() => void loadPlaces().then((ps) => {
+      if (!live) return;
+      const dm = latest.current.meta.domain;
+      indiaLabels.current = ps.filter((p) => p.lat >= dm.lat_min && p.lat <= dm.lat_max && p.lon >= dm.lon_min && p.lon <= dm.lon_max).slice(0, 450)
+        .map((p, i) => ({ name: p.name, lat: p.lat, lon: p.lon, rank: i, z: i < 12 ? 3.4 : i < 50 ? 4.4 : i < 160 ? 5.4 : 6.4 }));
+      paint();
+    }), 1500);
+    return () => { live = false; window.clearTimeout(id); };
   }, []);
 
   useEffect(paint, [data, scale, smooth]);

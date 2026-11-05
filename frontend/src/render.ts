@@ -33,7 +33,7 @@ export function bilinear(values: number[][], fy: number, fx: number): number {
 // ---------------------------------------------------------------------------------------------------
 
 /** Output pixels per grid cell, per axis. 4 is visually indistinguishable from 6 at map zoom levels used here. */
-const SMOOTH_PX_PER_CELL = 4;
+const SMOOTH_PX_PER_CELL = 8;   // India view: sharper contours when zoomed in (the data itself stays 0.25 deg)
 const RAW_PX_PER_CELL = 4;
 const LUT_SIZE = 1024;
 
