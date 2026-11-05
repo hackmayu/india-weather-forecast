@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config
+from . import config, world
 from .store import RUN_ID_RE
 
 log = logging.getLogger("precip.export_static")
@@ -47,7 +47,7 @@ def _write(path: Path, arr: np.ndarray, dtype: str) -> dict:
     return {"dtype": dtype, "shape": list(data.shape), "bytes": data.nbytes}
 
 
-def export_run(src: Path, out: Path) -> dict:
+def export_run(src: Path, out: Path, w50: bool = False) -> dict:
     """Export one processed deterministic run directory."""
     meta = json.loads((src / "meta.json").read_text())
     with np.load(src / "arrays.npz") as z:
@@ -80,6 +80,20 @@ def export_run(src: Path, out: Path) -> dict:
             }
             meta["world"].update(lats=[round(float(x), 4) for x in w["lats"]], lons=[round(float(x), 4) for x in w["lons"]],
                                  encodings=wenc)
+    shutil.rmtree(dst / "w50", ignore_errors=True)
+    if w50 and (src / "world50.npz").exists() and "world50" in meta:
+        # Detailed 0.5 deg world: ONE SMALL FILE PER VARIABLE AND STEP (runs/<id>/w50/<key>_<step index>.bin, 360 x 720),
+        # so the browser downloads only the time step it shows (about 0.3-1 MB each) instead of a whole 100 MB cube.
+        with np.load(src / "world50.npz") as z:
+            wenc = {}
+            for key, (dtype, scale) in world.W50_ENC.items():
+                a = z[key]
+                for i in range(a.shape[0]):
+                    _write(dst / "w50" / f"{key}_{i}.bin", a[i], dtype)
+                wenc[key] = {"dtype": dtype, "scale": scale, "shape": [int(a.shape[1]), int(a.shape[2])]}
+            meta["world50"]["encodings"] = wenc
+    else:
+        meta.pop("world50", None)
     (dst / "meta.json").write_text(json.dumps(meta, separators=(",", ":")))
     return meta
 
@@ -99,10 +113,11 @@ def export_prob(src: Path, out: Path) -> dict:
 
 
 def export_all(run_dirs: list[Path], prob_dirs: list[Path], out: Path, keep: int = 2, scheduled: bool = False,
-               refresh_minutes: int | None = None) -> dict:
+               refresh_minutes: int | None = None, world50: bool = False) -> dict:
     """Export the newest `keep` runs of each kind and write index.json. Older exported runs are removed."""
     out.mkdir(parents=True, exist_ok=True)
-    runs = [export_run(d, out) for d in run_dirs[:keep]]
+    # only the NEWEST run gets the detailed 0.5 deg world files (about 100 MB raw each); older runs keep the small 2 deg layer
+    runs = [export_run(d, out, w50=world50 and i == 0) for i, d in enumerate(run_dirs[:keep])]
     probs = [export_prob(d, out) for d in prob_dirs[:keep]]
     for kind, metas in (("runs", runs), ("prob", probs)):
         keep_ids = {m["run_id"] for m in metas}
@@ -133,6 +148,7 @@ def main() -> None:
     ap.add_argument("--keep", type=int, default=2)
     ap.add_argument("--scheduled", action="store_true", help="mark the site as refreshed by a schedule")
     ap.add_argument("--refresh-minutes", type=int)
+    ap.add_argument("--world50", action="store_true", help="also write the detailed 0.5 deg world files for the newest run (large)")
     a = ap.parse_args()
     if a.source == "processed":
         runs, probs = _run_dirs(config.PROCESSED_DIR), _run_dirs(config.PROCESSED_ENS_DIR)
@@ -140,7 +156,7 @@ def main() -> None:
         runs, probs = _run_dirs(config.SNAPSHOT_DIR), _run_dirs(config.SNAPSHOT_ENS_DIR)
     if not runs:
         raise SystemExit("no processed runs to export")
-    export_all(runs, probs, a.out, a.keep, a.scheduled, a.refresh_minutes)
+    export_all(runs, probs, a.out, a.keep, a.scheduled, a.refresh_minutes, a.world50)
 
 
 if __name__ == "__main__":

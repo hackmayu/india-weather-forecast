@@ -355,6 +355,7 @@ export default function App() {
   const validIso = meta.valid_times_utc[safeIndex];
   const startIso = safeIndex > 0 ? meta.valid_times_utc[safeIndex - 1] : meta.valid_times_utc[0];
   const marker = point ? point.grid_point : null;
+  const worldCell = mapData && mapData.lons.length > 1 ? Math.round(Math.abs(mapData.lons[1] - mapData.lons[0]) * 100) / 100 : 2;
   const vInfo = VARIABLES.find((v) => v.id === variable)!;
   const lastStep = meta.steps_h[meta.steps_h.length - 1];
   // "Next h hours": a window total ending h hours from now (nearest model step; clamped to the run's end).
@@ -527,9 +528,9 @@ export default function App() {
             </Suspense>
             {mapLoading && <div className="overlay" role="status">Loading map…</div>}
             {mapErr && <div className="overlay err" role="alert">{mapErr} <button type="button" onClick={() => setRetry((r) => r + 1)}>Retry</button></div>}
-            {hover && <div className="hover" aria-hidden="true">{hover.lat.toFixed(2)}°N {hover.lon.toFixed(2)}°E · {fmtHover(hover.value)} ({scope === "world" ? "2° average" : "grid cell"})</div>}
+            {hover && <div className="hover" aria-hidden="true">{hover.lat.toFixed(2)}°N {hover.lon.toFixed(2)}°E · {fmtHover(hover.value)} ({scope === "world" ? `${worldCell}° average` : "grid cell"})</div>}
             <Legend scale={scale} title={legendTitle}
-              note={scope === "world" ? "World overview: each cell is the average over 2° × 2° (about 220 km), so extremes look smaller than in the India view." : smooth ? "Display smoothed between 0.25° cells; the data are not finer than that." : "Raw 0.25° grid cells."} />
+              note={scope === "world" ? `World view: each cell is the average over ${worldCell}° × ${worldCell}° (about ${Math.round(worldCell * 111)} km), so extremes look smaller than in the India view.` : smooth ? "Display smoothed between 0.25° cells; the data are not finer than that." : "Raw 0.25° grid cells."} />
           </div>
           <div className="options">
             <span className="seg small" role="group" aria-label="Map view" title="World view shows the whole globe; the forecast data still covers India only (dashed box)">

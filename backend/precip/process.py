@@ -269,6 +269,12 @@ def process_run(run: Run, out_root: Path | None = None) -> Path:
         meta["world"] = w["meta"]
     except Exception:  # noqa: BLE001
         log.exception("world overview could not be built for %s; continuing without it", run.run_id)
+    try:   # detailed 0.5 deg global layer (served as per-step files; not committed to git, see export_static)
+        w = world.build50(run, read_tp, read_field, unit_factor_to_mm, convert_instant, _check_field)
+        np.savez_compressed(tmp / "world50.npz", **w["arrays"])
+        meta["world50"] = w["meta"]
+    except Exception:  # noqa: BLE001
+        log.exception("0.5 deg world layer could not be built for %s; continuing without it", run.run_id)
     np.savez_compressed(tmp / "arrays.npz", lats=lats.astype(np.float32), lons=lons.astype(np.float32),
                         cumulative_mm=cum_mm, interval_mm=intervals.astype(np.float32),
                         temp_c=temp_c, cloud_pct=cloud_pct, u10=u10, v10=v10)

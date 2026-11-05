@@ -10,11 +10,13 @@ import { ApiError } from "./types";
 
 const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../static-data");
 
+let hideW50 = false;   // the detailed 0.5 deg files are not in git; tests of the 2 deg layer must not depend on them
 beforeAll(() => {
   // Serve the exported files from disk in place of the network.
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^data\//, "");
     try {
+      if (hideW50 && path.includes("/w50/")) throw new Error("hidden");
       const buf = readFileSync(resolve(dataDir, path));
       return {
         ok: true, status: 200,
@@ -186,6 +188,7 @@ describe("light place fetch (used for the previous-run comparison)", () => {
 
 import worldGolden from "./world-golden.json";
 describe("world overview (2 degree block means)", () => {
+  beforeAll(() => { hideW50 = true; setDataBase("data/"); });
   const WG = worldGolden as unknown as { run_id: string; cells: [number, number][]; cases: { params: Record<string, string | number>; lats: number[]; lons: number[]; units: string; values: number[]; u: number[] | null }[] };
   for (const c of WG.cases) {
     it(`matches the real API: ${JSON.stringify(c.params)}`, async () => {
@@ -203,5 +206,37 @@ describe("world overview (2 degree block means)", () => {
   it("india scope is unchanged by the new parameter", async () => {
     const a = await fetchMap(WG.run_id, 24, "temp", "interval", 24);
     expect(a.lats.length).toBeGreaterThan(100);
+  });
+});
+
+
+import { existsSync } from "node:fs";
+describe("detailed 0.5 degree world (per-step files; present only after a local export with --world50)", () => {
+  const have = existsSync(resolve(dataDir, "runs", worldGolden.run_id, "w50", "cum_8.bin"));
+  beforeAll(() => { hideW50 = false; setDataBase("data/"); });
+  it.skipIf(!have)("is 4x finer than the 2 degree layer and consistent with it (block means of the same data)", async () => {
+    const fine = await fetchMap(worldGolden.run_id, 24, "temp", "interval", 24, "world");
+    expect(fine.lats.length).toBe(360); expect(fine.lons.length).toBe(720);
+    expect(Math.abs(fine.lons[1] - fine.lons[0])).toBeCloseTo(0.5, 6);
+    hideW50 = true; setDataBase("data/");
+    const coarse = await fetchMap(worldGolden.run_id, 24, "temp", "interval", 24, "world");
+    hideW50 = false; setDataBase("data/");
+    expect(coarse.lats.length).toBe(90);
+    // the mean of each 4 x 4 block of 0.5 deg cells must equal the 2 deg cell (same data, same averaging)
+    let worst = 0;
+    for (const [r, c] of [[10, 20], [45, 100], [60, 150], [80, 30]]) {
+      let s = 0;
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) s += fine.values[r * 4 + y][c * 4 + x];
+      worst = Math.max(worst, Math.abs(s / 16 - coarse.values[r][c]));
+    }
+    expect(worst).toBeLessThan(0.15);   // both are rounded to 0.1 degC
+  });
+  it.skipIf(!have)("rain: window = difference of cumulative files, never negative; wind has components", async () => {
+    const w = await fetchMap(worldGolden.run_id, 48, "precip", "window", 24, "world");
+    expect(w.units).toBe("mm");
+    expect(Math.min(...w.values.map((r) => Math.min(...r)))).toBeGreaterThanOrEqual(0);
+    const wind = await fetchMap(worldGolden.run_id, 24, "wind", "interval", 24, "world");
+    expect(wind.u && wind.v).toBeTruthy();
+    expect(wind.values[100][100]).toBeCloseTo(Math.hypot(wind.u![100][100], wind.v![100][100]), 0);
   });
 });

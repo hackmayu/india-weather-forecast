@@ -23,17 +23,17 @@ K = 8                      # block size in 0.25 deg cells -> 2 deg
 SPACING_DEG = 0.25 * K
 
 
-def block_mean(values: np.ndarray, lats: np.ndarray, lons: np.ndarray):
+def block_mean(values: np.ndarray, lats: np.ndarray, lons: np.ndarray, k: int = K):
     """(nlat, nlon) native grid -> ((nlat//K, nlon//K) means, block-centre lats, block-centre lons)."""
     lons = ((np.asarray(lons, dtype=np.float64) + 180.0) % 360.0) - 180.0
     order = np.argsort(lons)
     lons, values = lons[order], values[:, order]
     if lats[0] < lats[-1]:
         raise ValueError("latitudes unexpectedly ascending")
-    n_lat, n_lon = (len(lats) // K) * K, (len(lons) // K) * K
+    n_lat, n_lon = (len(lats) // k) * k, (len(lons) // k) * k
     v = values[:n_lat, :n_lon].astype(np.float64)
-    means = v.reshape(n_lat // K, K, n_lon // K, K).mean(axis=(1, 3))
-    return means.astype(np.float32), lats[:n_lat].reshape(-1, K).mean(axis=1), lons[:n_lon].reshape(-1, K).mean(axis=1)
+    means = v.reshape(n_lat // k, k, n_lon // k, k).mean(axis=(1, 3))
+    return means.astype(np.float32), lats[:n_lat].reshape(-1, k).mean(axis=1), lons[:n_lon].reshape(-1, k).mean(axis=1)
 
 
 def build(run: Run, read_tp, read_field, unit_factor_to_mm, convert_instant, check_field) -> dict:
@@ -68,4 +68,44 @@ def build(run: Run, read_tp, read_field, unit_factor_to_mm, convert_instant, che
             "domain": {"lat_min": float(lats.min()), "lat_max": float(lats.max()),
                        "lon_min": float(lons.min()), "lon_max": float(lons.max())},
             "method": f"mean over {SPACING_DEG:g} deg blocks of the global 0.25 deg fields (overview; smooths extremes)"}
+    return {"arrays": arrays, "meta": meta}
+
+
+# ---- 0.5 deg world ("w50"): the detailed global layer, served as one small file per variable and step ----------------
+K50 = 2                    # 2 x 2 blocks of 0.25 deg cells -> 0.5 deg (360 x 720)
+# Quantisation of the stored values (dtype, scale): precision is far below the model's own uncertainty.
+W50_ENC = {"cum": ("<u2", 10), "temp": ("<i2", 10), "cloud": ("u1", 1), "u": ("<i2", 100), "v": ("<i2", 100)}
+
+
+def build50(run: Run, read_tp, read_field, unit_factor_to_mm, convert_instant, check_field) -> dict:
+    """0.5 deg global block means, quantised. Same rules as build() (see the module notes); returns {"arrays", "meta"}.
+    Precipitation is stored as the CUMULATIVE field (0.1 mm steps); intervals and windows are differences computed by the reader."""
+    fields = [read_tp(raw_path(run, s)) for s in run.steps]
+    units = {f.units for f in fields}
+    if len(units) != 1:
+        raise ValueError(f"mixed tp units across steps: {units}")
+    factor = unit_factor_to_mm(units.pop())
+    cum, lats, lons = [], None, None
+    for f, s in zip(fields, run.steps):
+        check_field(f, run, s, "tp")
+        m, lats, lons = block_mean(f.values_native * factor, f.lats, f.lons, K50)
+        cum.append(np.clip(np.rint(m * W50_ENC["cum"][1]), 0, 65535).astype("<u2"))
+    arrays = {"cum": np.stack(cum)}
+
+    def instant(param: str, key: str) -> None:
+        dt, sc = W50_ENC[key]
+        out = []
+        for s in run.steps:
+            f = read_field(raw_path(run, s, param), param, "instant")
+            check_field(f, run, s, param)
+            m, _, _ = block_mean(convert_instant(param, f.units, f.values_native), f.lats, f.lons, K50)
+            out.append(np.rint(m * sc).astype(dt))
+        arrays[key] = np.stack(out)
+
+    for param, key in (("2t", "temp"), ("tcc", "cloud"), ("10u", "u"), ("10v", "v")):
+        instant(param, key)
+    meta = {"spacing_deg": 0.25 * K50, "n_lat": int(lats.size), "n_lon": int(lons.size), "steps": len(run.steps),
+            "lat0": round(float(lats[0]), 4), "lon0": round(float(lons[0]), 4),
+            "method": "mean over 0.5 deg blocks of the global 0.25 deg fields (smooths extremes a little)"}
+    arrays["lats"], arrays["lons"] = lats.astype(np.float32), lons.astype(np.float32)
     return {"arrays": arrays, "meta": meta}

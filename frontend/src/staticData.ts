@@ -37,7 +37,9 @@ interface IndexRun { run_id: string; issue_time_utc: string; published_at_utc?: 
 interface Index { generated_at_utc: string; scheduled_refresh: boolean; refresh_minutes: number | null; runs: IndexRun[]; probability: IndexRun[] }
 type Encoding = { dtype: string; shape: number[]; scale: number };
 type StaticRunMeta = Omit<RunMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; model: string;
-  world?: { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; spacing_deg: number } };
+  world?: { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; spacing_deg: number };
+  /** Detailed 0.5 deg world, one file per variable and step (runs/<id>/w50/<key>_<step index>.bin). Absent on snapshot builds. */
+  world50?: { spacing_deg: number; n_lat: number; n_lon: number; lat0: number; lon0: number; encodings: Record<string, { dtype: string; scale: number; shape: number[] }> } };
 type StaticProbMeta = Omit<ProbMeta, "freshness" | "attribution"> & { lats: number[]; lons: number[]; encodings: Record<string, Encoding>; scale: number;
   domain: RunMeta["domain"]; units: string };
 
@@ -137,6 +139,10 @@ export async function fetchMap(runId: string, step: number, variable: VariableId
   if (!Number.isInteger(step) || step < 0 || step > 144) throw new ApiError(422, "Input should be between 0 and 144.");
   if (!steps.includes(step)) throw new ApiError(422, `step ${step} is not a forecast step of this run; valid: ${pyList(steps)}`);
   const i = steps.indexOf(step);
+  if (scope === "world" && m.world50?.encodings) {
+    try { return await fetchMap50(m, i, step, variable, kind, hours); }
+    catch (e) { if (!(e instanceof ApiError) || e.status !== 404) throw e; /* files not deployed: use the 2 deg layer below */ }
+  }
   // scope=world: the coarse 2 deg global overview files (runs/<id>/world/*), same rules, different grid.
   if (scope === "world" && !m.world) throw new ApiError(404, `Run ${m.run_id} has no global overview (processed before it was added).`);
   const g = scope === "world" ? m.world! : m;
@@ -185,6 +191,46 @@ export async function fetchMap(runId: string, step: number, variable: VariableId
   }
   return { ...base, units: "m/s", values: speed,
     u: grid(ua, i * H * W, H, W, (v) => r1(v / sc)), v: grid(va, i * H * W, H, W, (v) => r1(v / sc)) };
+}
+
+// ---- detailed 0.5 deg world (per-step files) -------------------------------------------------------------
+async function chunk50(m: StaticRunMeta, key: string, idx: number): Promise<Arr> {
+  const enc = m.world50!.encodings[key];
+  return memo(`w50|${m.run_id}|${key}|${idx}`, async () => {
+    const buf = await getBin(`runs/${m.run_id}/w50/${key}_${idx}.bin`);
+    const a = enc.dtype === "<u2" ? new Uint16Array(buf) : enc.dtype === "<i2" ? new Int16Array(buf) : new Uint8Array(buf);
+    if (a.length !== enc.shape[0] * enc.shape[1]) throw new ApiError(500, `Data file ${key}_${idx} has ${a.length} values.`);
+    return a;
+  });
+}
+
+async function fetchMap50(m: StaticRunMeta, i: number, step: number, variable: VariableId, kind: Kind, hours: number): Promise<MapResp> {
+  const w = m.world50!, H = w.n_lat, W = w.n_lon, steps = m.steps_h;
+  const lats = Array.from({ length: H }, (_, k) => Math.round((w.lat0 - k * w.spacing_deg) * 1e4) / 1e4);
+  const lons = Array.from({ length: W }, (_, k) => Math.round((w.lon0 + k * w.spacing_deg) * 1e4) / 1e4);
+  const out = { run_id: m.run_id, step_h: step, variable, valid_time_utc: m.valid_times_utc[i], lats, lons };
+  const sc = (key: string) => w.encodings[key].scale;
+  const diff = (a: Arr, b: Arr, k: number) => grid(a, 0, H, W, () => 0).map((row, y) => row.map((_, x) => r1(Math.max(a[y * W + x] - b[y * W + x], 0) / k)));
+  if (variable === "precip") {
+    const cum = await chunk50(m, "cum", i);
+    if (kind === "window") {
+      const prev = await chunk50(m, "cum", steps.indexOf(step - hours));
+      return { ...out, kind, accumulation_hours: hours, units: "mm", values: diff(cum, prev, sc("cum")) };
+    }
+    if (kind === "interval") {
+      const prev = await chunk50(m, "cum", i - 1);
+      return { ...out, kind, accumulation_hours: m.interval_durations_h[i - 1], units: "mm", values: diff(cum, prev, sc("cum")) };
+    }
+    return { ...out, kind, accumulation_hours: step, units: "mm", values: grid(cum, 0, H, W, (v) => r1(v / sc("cum"))) };
+  }
+  const base = { ...out, kind: "instant" as const, accumulation_hours: 0 };
+  if (variable === "temp") return { ...base, units: "°C", values: grid(await chunk50(m, "temp", i), 0, H, W, (v) => r1(v / sc("temp"))) };
+  if (variable === "cloud") return { ...base, units: "%", values: grid(await chunk50(m, "cloud", i), 0, H, W, (v) => v) };
+  const [ua, va] = await Promise.all([chunk50(m, "u", i), chunk50(m, "v", i)]);
+  const k = sc("u");
+  const speed = grid(ua, 0, H, W, () => 0);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) speed[y][x] = r1(Math.hypot(ua[y * W + x] / k, va[y * W + x] / k));
+  return { ...base, units: "m/s", values: speed, u: grid(ua, 0, H, W, (v) => r1(v / k)), v: grid(va, 0, H, W, (v) => r1(v / k)) };
 }
 
 // ---- place series -------------------------------------------------------------------------------

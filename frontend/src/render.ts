@@ -5,6 +5,8 @@ const CELL = 0.25; // source grid spacing (deg)
 const MERC_LAT = 85.0511;   // Web-Mercator cannot show beyond this latitude (the world layer's top/bottom rows are cut off there)
 const merc = (latDeg: number) => Math.log(Math.tan(Math.PI / 4 + (Math.max(-MERC_LAT, Math.min(MERC_LAT, latDeg)) * Math.PI) / 360));
 /** Grid spacing in degrees, read from the data (0.25 for India, 2 for the world overview). */
+/** Arrow stride so arrows are about 1 deg (India) / 3 deg (0.5 deg world) / 6 deg (2 deg world) apart. */
+export const arrowStride = (cell: number) => (cell >= 1 ? 3 : cell >= 0.5 ? 6 : 4);
 export const cellOf = (d: { lats: number[]; lons: number[] }) => (d.lons.length > 1 ? Math.abs(d.lons[1] - d.lons[0]) : CELL);
 
 /**
@@ -70,7 +72,7 @@ export function rasterize(data: MapResp, scale: Scale, smooth: boolean): Raster 
   const cell = cellOf(data);
   const latTop = Math.min(MERC_LAT, data.lats[0] + cell / 2), latBot = Math.max(-MERC_LAT, data.lats[nlat - 1] - cell / 2);
   const lonL = Math.max(-180, data.lons[0] - cell / 2), lonR = Math.min(180, data.lons[nlon - 1] + cell / 2);
-  const W = nlon * (cell >= 1 ? 8 : smooth ? SMOOTH_PX_PER_CELL : RAW_PX_PER_CELL);   // coarse world cells get more pixels so their edges stay soft
+  const W = nlon * (cell >= 1 ? 8 : cell >= 0.5 ? 3 : smooth ? SMOOTH_PX_PER_CELL : RAW_PX_PER_CELL);   // coarse world cells get more pixels so their edges stay soft
   const xSpan = ((lonR - lonL) * Math.PI) / 180;
   const ySpan = merc(latTop) - merc(latBot);
   const H = Math.round((W * ySpan) / xSpan);

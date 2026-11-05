@@ -87,7 +87,7 @@ def build(out: Path, previous: Path | None, force: bool = False, scheduled_minut
         raise SystemExit("deterministic run could not be processed; not publishing")
 
     # new exports first, then top up with the previous publish up to KEEP of each kind
-    export_static.export_all(run_dirs, prob_dirs, out, keep=KEEP, scheduled=True, refresh_minutes=scheduled_minutes)
+    export_static.export_all(run_dirs, prob_dirs, out, keep=KEEP, scheduled=True, refresh_minutes=scheduled_minutes, world50=True)
     if previous:
         carry_over(previous, out, "runs", prev_runs[: KEEP])
         carry_over(previous, out, "prob", prev_probs[: KEEP])
@@ -102,6 +102,14 @@ def build(out: Path, previous: Path | None, force: bool = False, scheduled_minut
         return sorted(found, key=lambda e: e["issue_time_utc"], reverse=True)[:KEEP]
 
     runs, probs = entries("runs"), entries("prob")
+    # keep the big 0.5 deg world files for the newest run only (carried-over older runs would double the site size)
+    for e in runs[1:]:
+        d = out / "runs" / e["run_id"]
+        if (d / "w50").is_dir():
+            shutil.rmtree(d / "w50")
+            m = json.loads((d / "meta.json").read_text())
+            m.pop("world50", None)
+            (d / "meta.json").write_text(json.dumps(m, separators=(",", ":")))
     for kind, keep_ids in (("runs", {e["run_id"] for e in runs}), ("prob", {e["run_id"] for e in probs})):
         if (out / kind).is_dir():
             for d in (out / kind).iterdir():

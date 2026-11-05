@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import type { MapResp, RunMeta, VariableId } from "./api";
 import type { Scale } from "./colors";
 import { fallbackStyle } from "./fallbackStyle";
-import { cellOf, rasterize, rasterToBlob, windArrows } from "./render";
+import { arrowStride, cellOf, rasterize, rasterToBlob, windArrows } from "./render";
 
 const CELL = 0.25;
 // Hosted vector basemaps from OpenFreeMap (no key, no cookies; OSM data, attribution shown on the map).
@@ -60,7 +60,7 @@ export default function MapView(props: Props) {
     const seq = ++paintSeq.current;
     const raster = rasterize(d, sc, sm);
     const wind = m.getSource("wind") as maplibregl.GeoJSONSource | undefined;
-    wind?.setData(latest.current.variable === "wind" ? windArrows(d, cellOf(d) >= 1 ? 3 : 4) : { type: "FeatureCollection", features: [] });
+    wind?.setData(latest.current.variable === "wind" ? windArrows(d, arrowStride(cellOf(d))) : { type: "FeatureCollection", features: [] });
     rasterToBlob(raster).then((blob) => {
       const mm = map.current;
       if (seq !== paintSeq.current || !mm) return;     // superseded (e.g. the slider moved on) or unmounted

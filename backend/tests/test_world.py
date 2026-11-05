@@ -81,3 +81,61 @@ def test_cache_headers_only_for_explicit_runs(client):
     assert "max-age=900" in explicit.headers["cache-control"]
     assert client.get("/api/runs/latest").headers["cache-control"] == "no-cache"
     assert client.get("/api/health").headers["cache-control"] == "no-cache"
+
+
+# ---- 0.5 deg layer (build50) and its per-step export -------------------------------------------------------------
+from types import SimpleNamespace  # noqa: E402
+
+from precip.fetch import Run  # noqa: E402
+
+
+def _fake_readers(n_lat=8, n_lon=16):
+    lats = 90 - 0.25 * np.arange(n_lat)
+    lons = (180 + 0.25 * np.arange(n_lon)) % 360
+
+    def read_tp(path):
+        s = int(str(path).rsplit("_", 1)[1].split(".")[0]) if "tp" not in str(path) else 0
+        return SimpleNamespace(values_native=np.full((n_lat, n_lon), 0.001 * (1 + s)), units="m", step=s, quantum_native=1e-6,
+                               lats=lats, lons=lons, data_date="20260101", data_time=0)
+
+    def read_field(path, param, kind):
+        base = {"2t": 300.12, "tcc": 0.5, "10u": 3.0, "10v": 4.0}[param]
+        return SimpleNamespace(values_native=np.full((n_lat, n_lon), base), units={"2t": "K", "tcc": "(0 - 1)"}.get(param, "m s**-1"),
+                               step=0, quantum_native=0, lats=lats, lons=lons, data_date="20260101", data_time=0)
+
+    convert = lambda param, units, v: {"2t": v - 273.15, "tcc": v * 100.0}.get(param, v)  # noqa: E731
+    return read_tp, read_field, (lambda u: 1000.0), convert, (lambda *a, **k: None)
+
+
+def test_build50_quantises_and_keeps_grid_geometry(monkeypatch):
+    run = Run("20260101", 0)
+    monkeypatch.setattr(type(run), "steps", property(lambda self: [0, 3, 6]), raising=False)
+    w = world.build50(run, *_fake_readers())
+    a, m = w["arrays"], w["meta"]
+    assert a["cum"].shape == (3, 4, 8) and a["cum"].dtype == np.dtype("<u2")
+    assert (a["temp"] == 270).all()      # 26.97 degC stored in tenths (a value away from a .5 tie, which float32 averaging could round either way)
+    assert (a["cloud"] == 50).all() and (a["u"] == 300).all() and (a["v"] == 400).all()
+    assert m["spacing_deg"] == 0.5 and m["n_lat"] == 4 and m["n_lon"] == 8 and m["steps"] == 3
+    assert a["lons"].min() >= -180 and a["lats"][0] > a["lats"][-1]
+
+
+def test_export_writes_one_file_per_variable_and_step(tmp_path):
+    from precip import export_static
+    src, out = tmp_path / "2026010100", tmp_path / "out"
+    src.mkdir()
+    n = 3
+    z = np.zeros((n, 2, 2), dtype=np.float32)
+    np.savez_compressed(src / "arrays.npz", lats=np.array([38.0, 37.75], dtype=np.float32), lons=np.array([66.0, 66.25], dtype=np.float32),
+                        cumulative_mm=z, interval_mm=z[:2], temp_c=z, cloud_pct=z, u10=z, v10=z)
+    np.savez_compressed(src / "world50.npz", cum=np.ones((n, 4, 6), "<u2"), temp=np.ones((n, 4, 6), "<i2"), cloud=np.ones((n, 4, 6), "u1"),
+                        u=np.ones((n, 4, 6), "<i2"), v=np.ones((n, 4, 6), "<i2"), lats=np.arange(4, dtype=np.float32), lons=np.arange(6, dtype=np.float32))
+    meta = {"run_id": "2026010100", "model": "S", "issue_time_utc": "2026-01-01T00:00:00Z", "steps_h": [0, 3, 6],
+            "world50": {"spacing_deg": 0.5, "n_lat": 4, "n_lon": 6, "steps": 3, "lat0": 1.0, "lon0": 2.0}}
+    (src / "meta.json").write_text(json.dumps(meta))
+    m = export_static.export_run(src, out, w50=True)
+    d = out / "runs" / "2026010100" / "w50"
+    assert sorted(p.name for p in d.iterdir()) == sorted(f"{k}_{i}.bin" for k in ("cum", "temp", "cloud", "u", "v") for i in range(n))
+    assert (d / "cum_0.bin").stat().st_size == 4 * 6 * 2 and (d / "cloud_2.bin").stat().st_size == 4 * 6
+    assert m["world50"]["encodings"]["temp"] == {"dtype": "<i2", "scale": 10, "shape": [4, 6]}
+    m2 = export_static.export_run(src, out, w50=False)          # an older run: files and metadata are dropped again
+    assert "world50" not in m2 and not d.exists()

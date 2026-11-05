@@ -80,3 +80,15 @@ fields that are downloaded for India (no extra downloads): `backend/precip/world
 - API: `GET /api/runs/{id}/map?...&scope=world`. Static files: `runs/<id>/world/*.bin`. Parity with the real API is tested (`src/world-golden.json`).
 - Data fetching (same day): run-addressed API responses carry `Cache-Control: max-age=900`; the static engine reuses `index.json` for 20 s instead of
   re-downloading it before every request; identical in-flight GETs share one request.
+
+### Detailed 0.5 deg world (added 2026-11-05, same block-mean rules)
+`world.build50` averages 2 x 2 blocks of the global 0.25 deg fields to a 360 x 720 grid and stores it quantised (rain: cumulative, 0.1 mm; temperature
+0.1 degC; cloud 1 %; wind components 0.01 m/s). Exported as ONE FILE PER VARIABLE AND STEP (`runs/<id>/w50/<key>_<step index>.bin`, about 0.3-1 MB gzipped each),
+so the browser downloads only the time step on screen. Rain intervals/windows are differences of the cumulative files, floored at 0.
+Measured real sizes of one global 0.25 deg step (gzip): rain 0.57 MB, temperature 0.52, cloud 0.47, each wind component 1.2 MB -> about 200 MB per run
+at full 0.25 deg, which is why the world layer is 0.5 deg. At 0.5 deg a newest run is about 75-120 MB raw (all steps, all variables).
+- Only the NEWEST run carries these files (the Action removes them from older runs) and they are NOT committed to `main` (`.gitignore`); a build from
+  `main` alone therefore falls back to the committed 2 deg world layer automatically. They appear after the first run of the publish Action, or locally with
+  `python -m precip.export_static --world50 ...`.
+- Consistency check (tested): the mean of every 4 x 4 block of the 0.5 deg field equals the independent 2 deg field within display rounding.
+- Not verified: a real run of the GitHub Action with these files, and the size/time of the force-push of the `vercel-live` branch.
