@@ -1,12 +1,26 @@
 export type Zone = "local" | "utc";
 
+// Building an Intl.DateTimeFormat is expensive (about a millisecond); the results panel formats hundreds of times per
+// click. Formatters are therefore created once per option set, and finished labels are remembered.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function dtf(key: string, opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  let f = formatters.get(key);
+  if (!f) { f = new Intl.DateTimeFormat("en-GB", opts); formatters.set(key, f); }
+  return f;
+}
+const labels = new Map<string, string>();
+function memoLabel(key: string, make: () => string): string {
+  let v = labels.get(key);
+  if (v === undefined) { if (labels.size > 5000) labels.clear(); v = make(); labels.set(key, v); }
+  return v;
+}
+
 export function formatTime(iso: string, zone: Zone, withDate = true): string {
-  const f = new Intl.DateTimeFormat("en-GB", {
+  return memoLabel(`t|${zone}|${withDate}|${iso}`, () => dtf(`t|${zone}|${withDate}`, {
     ...(withDate ? { weekday: "short" as const, day: "numeric" as const, month: "short" as const } : {}),
     hour: "2-digit", minute: "2-digit", hour12: false,
     timeZone: zone === "utc" ? "UTC" : undefined, timeZoneName: "short",
-  });
-  return f.format(new Date(iso));
+  }).format(new Date(iso)));
 }
 
 export function zoneName(zone: Zone): string {
@@ -83,7 +97,7 @@ export function relTime(deltaMs: number): string {
 export interface DayChip { key: string; label: string; index: number }
 
 function localParts(ms: number, zone: Zone) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
+  const parts = dtf(`p|${zone}`, {
     timeZone: zone === "utc" ? "UTC" : undefined, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
   }).formatToParts(new Date(ms));
   const g = (t: string) => parts.find((p) => p.type === t)!.value;
@@ -108,7 +122,7 @@ export function dayShortcuts(valid: string[], nowMs: number, zone: Zone, minInde
     if (!cur || off < cur.off) byDate.set(date, { index: i, off });
   });
   const today = localDate(nowMs, zone), tomorrow = localDate(nowMs + 24 * 3_600_000, zone);
-  const label = new Intl.DateTimeFormat("en-GB", { timeZone: zone === "utc" ? "UTC" : undefined, weekday: "short", day: "numeric" });
+  const label = dtf(`d|${zone}`, { timeZone: zone === "utc" ? "UTC" : undefined, weekday: "short", day: "numeric" });
   const chips: DayChip[] = [];
   for (const [date, { index, off }] of byDate) {
     if (off > 6 && date !== today) continue;
@@ -122,5 +136,5 @@ export function dayShortcuts(valid: string[], nowMs: number, zone: Zone, minInde
 
 /** Compact label such as "Thu 05:30" (weekday + time, no zone name) for narrow table cells; the zone is stated once in a caption. */
 export function formatShort(iso: string, zone: Zone): string {
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: zone === "utc" ? "UTC" : undefined }).format(new Date(iso));
+  return memoLabel(`s|${zone}|${iso}`, () => dtf(`s|${zone}`, { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: zone === "utc" ? "UTC" : undefined }).format(new Date(iso)));
 }

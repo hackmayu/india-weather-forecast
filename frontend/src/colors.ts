@@ -20,7 +20,17 @@ const RAIN_INTERVAL = [0.1, 0.5, 1, 2.5, 5, 10, 20, 35, 50, 75];          // mm 
 const RAIN_CUMULATIVE = [0.1, 1, 5, 10, 25, 50, 100, 150, 200, 300];      // mm since issue time
 const RAIN_WINDOW = [0.1, 1, 2.5, 5, 10, 25, 50, 100, 150, 200];          // mm over a chosen window (e.g. 24 h)
 
+// The scale object is compared by identity (React effects redraw the map when it changes). Returning a fresh object on every
+// render made the whole map re-rasterise each time anything changed, e.g. when a place was picked. Same inputs -> same object.
+const scaleCache = new Map<string, Scale>();
 export function getScale(variable: Variable, kind: Kind, palette: Palette): Scale {
+  const key = `${variable}|${kind}|${palette}`;
+  let s = scaleCache.get(key);
+  if (!s) { s = buildScale(variable, kind, palette); scaleCache.set(key, s); }
+  return s;
+}
+
+function buildScale(variable: Variable, kind: Kind, palette: Palette): Scale {
   switch (variable) {
     case "precip":
       return {
