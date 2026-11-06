@@ -256,7 +256,7 @@ export default function App() {
   // Prefetch the next two steps (and the previous one) so stepping and playback never wait for the network.
   useEffect(() => {
     if (!meta || variable === "prob") return;
-    for (const j of [index + 1, index + 2, index - 1]) {
+    for (const j of [index + 1]) {
       if (j < 0 || j >= meta.steps_h.length) continue;
       const step = meta.steps_h[j];
       const key = `${meta.run_id}|${step}|${variable}|${kind}|${kind === "window" ? windowHours : 0}|${scope}`;

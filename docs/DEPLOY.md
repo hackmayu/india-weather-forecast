@@ -81,3 +81,11 @@ tests against the real API. The real FastAPI endpoints are deployed on Render (`
 After seeing the actual import screen, the config was moved from a root `vercel.json` in beta "Services" mode to a plain `frontend/vercel.json`
 used with "Import single project", because the Services preset would auto-include the backend and the beta feature adds risk for no benefit.
 Both `frontend/vercel.json` and `deploy/vercel-static.json` were validated against Vercel's published JSON schema (0 errors).
+
+
+## World layers on the live site (read before the first Action run)
+The 0.5 degree world map files and the 1 degree place tiles are NOT in `main` (about 90-130 MB raw for the newest run). They are created by the
+**Publish static site (Vercel)** Action and appear on the `vercel-live` branch. Until the Action has run once, the live site shows the 2 degree world layer and
+the message "World-wide place forecasts are not published yet" for places outside India; India works as before. After the first run, open the live site, choose
+World, then Temperature, and click a place outside India to confirm. Not verified yet: the real size and duration of that run and of the Vercel deployment
+(the Hobby plan has limits; if the deployment is rejected as too large, tell Claude and the 0.5 degree layer can be reduced to fewer steps).

@@ -123,7 +123,7 @@ export default function MapView(props: Props) {
     m.addSource("domain", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString",
       coordinates: [[dm.lon_min, dm.lat_min], [dm.lon_max, dm.lat_min], [dm.lon_max, dm.lat_max], [dm.lon_min, dm.lat_max], [dm.lon_min, dm.lat_min]] } } });
     m.addLayer({ id: "domain", type: "line", source: "domain", paint: { "line-color": "#1f2937", "line-width": 1.2, "line-dasharray": [3, 2] } });
-    if (m.getStyle().glyphs) {   // the bundled offline fallback style has no fonts, so no number labels there
+    if (m.getStyle().glyphs && !location.search.includes("nolabels")) {   // (?nolabels: debugging aid) the bundled offline fallback style has no fonts, so no number labels there
       m.addSource("labels", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       m.addLayer({ id: "labels", type: "symbol", source: "labels", filter: ["<=", ["get", "z"], ["zoom"]],
         layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Bold"], "text-size": 11, "text-anchor": "center", "symbol-sort-key": ["get", "rank"], "text-padding": 3 },

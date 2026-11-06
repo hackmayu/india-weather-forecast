@@ -78,7 +78,7 @@ forecast produced by this project.
 
 - **Shareable links:** the address bar always reflects the view (variable, rain total type, valid time, place,
   time zone); "Copy link" shares it. Parameters are strictly validated and ignored if invalid.
-- **Places:** map click, ~40 city search, six one-click cities, latitude/longitude entry, and "Use my location"
+- **Places:** map click, search of ~7,200 Indian places and ~6,000 world cities, six one-click cities, latitude/longitude entry, and "Use my location"
   (browser permission, user-initiated; the position is only used to look up the nearest grid cell).
 - **Charts:** hover or tap shows the value and time; click selects that time. A data table and a
   **CSV download** (with provenance and the "model values, not observations" note) are provided.
@@ -93,6 +93,27 @@ forecast produced by this project.
 - **Keyboard:** Space play/pause, left/right arrows step time, N jumps to now (when no control or the map has
   focus); skip link to the location chooser. **Dark theme** (auto/light/dark), reduced-motion respected,
   an error boundary instead of a blank page.
+
+## World view, world-wide place forecasts and map detail
+
+- **India / World switch** under the map. World zooms out to the whole globe and shows rain, temperature, cloud and wind from the same global ECMWF
+  files that are downloaded for India (no extra download). Two global layers exist: a small 2° overview that ships with the repository, and a
+  **0.5°** layer (360 x 720 cells, every forecast step) published by the GitHub Action as one small file per variable and step, so the browser only
+  downloads the step on screen. Without the 0.5° files the app falls back to the 2° layer automatically.
+- **Forecast numbers on the map:** place names carry the current value of the selected variable (about 450 Indian towns appear as you zoom in; 72 large
+  cities in World view). A value is the model value of the grid cell containing the place.
+- **Place forecasts anywhere on Earth:** click the World map or search one of ~6,000 large cities (GeoNames) and the usual results panel opens, from
+  **1° tiles** (all steps and variables for a 30° x 30° area, about 0.15 MB per click). A world value is the mean over a 1° cell (~110 km) of the
+  0.25° model data, so it is smoother than a point forecast; rain probabilities and the previous-run comparison exist for India only.
+- **Search:** about 7,200 places in India (GeoNames, towns of 1,000+ people) plus the world cities; ranked suggestions as you type, one-typo tolerance,
+  old names (Bombay, Madras, ...), recent places, and a browse-by-state menu.
+- **India detail:** the India view keeps the model's native 0.25° grid (the finest ECMWF publishes openly). Display detail was increased (8 pixels per
+  cell, so contour edges stay sharp when zooming), a more detailed basemap is selectable, and town labels with values appear as you zoom in. Zooming
+  does not create information finer than ~28 km.
+- **Speed:** the map is rasterised with typed arrays and encoded off the main thread; heavy panels load after the first draw; date formatters are cached;
+  the next two steps are prefetched. Measured with the CPU slowed 4x in a headless browser: next-step 1,672 ms -> ~390 ms, picking a place ~1.1 s -> ~0.23 s.
+  These are laboratory numbers from one quiet-machine run, not a user study; repeat runs on a busy machine varied by 2-5x.
+- Details, sizes and limits: `docs/DATA_NOTES.md` (world layers) and `docs/DEPLOY.md`.
 
 ## ECMWF ensemble probabilities ("Rain chance")
 
@@ -473,14 +494,14 @@ observations, alerts, accuracy claims or advice are generated, and no external A
 
 Observed during development (2026-11-04), not aspirational:
 
-- **Backend: 77 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
+- **Backend: 87 tests pass.** Includes synthetic tests for unit conversion, unequal step spacing, packing
   noise vs. a real reset error, longitude wrapping, API validation, wind direction.
 - **Real-data checks:** processed values at five places and at the wettest cell (17.25°N 81.5°E,
   75.3 mm in 3 h) match values read straight from the source GRIB with eccodes' own nearest-point search
   (to 0.01 mm for precipitation; 2 m temperature, cloud and wind within their packing precision).
 - **Reproducibility:** re-downloading the 00 UTC run on an empty disk produced raw-message SHA-256
   checksums identical to the first download, and the same counts (3073 packing-noise cells zeroed).
-- **Frontend:** 75 unit tests (including 25 parity tests of the browser data engine against the real API) (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
+- **Frontend:** 99 unit tests (5 more run only when the large world files are present locally) (including 25 parity tests of the browser data engine against the real API) (colour scales, display interpolation, wind arrows, now/next-run time logic, run comparison, URL state validation, CSV, 24 h blocks, city list, window URL param, cities-at-a-glance), strict TypeScript, production build.
 - **Browser checks (desktop and 375 px wide):** map overlay, click selection, outside-domain message,
   play/pause, variable switching, shared-link restore (variable, time, place, zone), city search, CSV content, chart hover values, 24 h table, Space/arrow shortcuts, basemap fallback (simulated unreachable basemap), no horizontal overflow.
 - **Newer-run path with real data:** with only the 00 UTC run served, then the 06 UTC run added, (a) with
@@ -558,7 +579,7 @@ verification, final commit id. See "Final deliverables" below once filled.
 To be filled in only when each item has been done and checked:
 
 - Live URL: **pending**
-- Git repository: local repo `quest-precip`; remote **pending**
+- Git repository: https://github.com/hackmayu/india-weather-forecast (branch `main`; the Action publishes `vercel-live`)
 - Final commit id: **pending**
 - Session log: `C:\Users\jalan\.claude\projects\C--Users-jalan-ppt\aadb2182-faa2-485c-a38f-7534910abdd7.jsonl`
   (Claude Code writes it as the session runs; submit that file unedited, after the session's final

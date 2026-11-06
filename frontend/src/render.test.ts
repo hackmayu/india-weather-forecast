@@ -46,7 +46,7 @@ describe("rasterize", () => {
   it("is deterministic with the right size and corners", () => {
     const sc = getScale("temp", "interval", "classic" as never);
     const a = rasterize(grid(), sc, true), b = rasterize(grid(), sc, true);
-    expect(a.width).toBe(24);   // 3 columns x 8 px per cell
+    expect(a.width).toBe(15);   // 3 columns x 5 px per cell
     expect(Array.from(a.data.slice(0, 400))).toEqual(Array.from(b.data.slice(0, 400)));
     expect(a.data.length).toBe(a.width * a.height * 4);
     expect(a.coordinates[0][0]).toBeCloseTo(69.875);
