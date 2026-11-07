@@ -1,0 +1,32 @@
+{
+ "format": 1,
+ "generated_at_utc": "2026-11-07T16:41:37Z",
+ "scheduled_refresh": true,
+ "refresh_minutes": 30,
+ "runs": [
+  {
+   "run_id": "2026110706",
+   "issue_time_utc": "2026-11-07T06:00:00Z",
+   "published_at_utc": "2026-11-07T12:27:00Z",
+   "max_step_h": 90
+  },
+  {
+   "run_id": "2026110700",
+   "issue_time_utc": "2026-11-07T00:00:00Z",
+   "published_at_utc": "2026-11-07T07:34:00Z",
+   "max_step_h": 144
+  }
+ ],
+ "probability": [
+  {
+   "run_id": "2026110700",
+   "issue_time_utc": "2026-11-07T00:00:00Z",
+   "published_at_utc": "2026-11-07T08:01:00Z"
+  },
+  {
+   "run_id": "2026110612",
+   "issue_time_utc": "2026-11-06T12:00:00Z",
+   "published_at_utc": "2026-11-06T20:01:00Z"
+  }
+ ]
+}
